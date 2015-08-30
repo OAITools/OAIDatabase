@@ -58,13 +58,21 @@ def pdf2text(data,layout=True,tmpdir="/tmp"):
 
 def convert_text_file(txt):
     ''' Convert a OAI data description file into a mapping of 
-    variable names and descriptions. This is a rather ugly :(
+    variable names and descriptions. This is a rather ugly hack since
+    we can't seem to read compressed V9 XPT files directly in Python :(
     '''
     
     # split by page
-    pages = txt.split("The CONTENTS Procedure")[1:]
-    pages = [x for x in pages if "Variables in Creation Order" in x]
+    data = []
     
+    #page_type = "Alphabetic List of Variables and Attributes"
+    page_type = "Variables in Creation Order"
+    
+    pages = txt.split("The CONTENTS Procedure")[1:]
+    pages = [x for x in pages if page_type in x]
+    
+    
+    # parse each page
     for page in pages:
         rows = page.split("\n")
         
@@ -97,9 +105,9 @@ def convert_text_file(txt):
             else:
                 mrows[-1] += fields
         
-        #Informat
+        
         for x in mrows:
-            
+            print x
             id, name, dtype, width = x[:4]
             
             # format details
@@ -120,36 +128,13 @@ def convert_text_file(txt):
             label = " ".join(x)
             
             row = [id,name,dtype,width] + fmt + [label]
-            print "\t".join(row)
-        #sys.exit()
+            data += [row]
+            
+    return data
         
-        
-def parse_xport(filename):
-    '''This is a giant hack. Since V9 XPORT files appear to be compressed
-    in the OAI release, and I don't want to install SAS to convert them or
-    extract them from PDF text, we just use some regular expressions to 
-    pull the fields directly out of the XPORT file.
-    '''
-    ["EV","SAQ","SV","IEI"]
-        
-import re
-import string
 def main():
     
-    '''
-    xfname = "/Users/fries/Desktop/AllClinical09_SAS/AllClinical09.xpt"
-    xfile = open(xfname,"rb")
-    
-    header = xfile.read(80)
-    
-    xfile = "".join(xfile.read())
-    matches = re.findall("[A-Za-z0-9 ]+:[A-Za-z0-9 %s]+" % string.punctuation,xfile)
-    for x in matches:
-        print x
-    '''
-    
-    
-    indir = "/Users/fries/Desktop/data/clinical/AllClinical09_Doc.zip"
+    indir = "/Users/fries/Desktop/data/clinical/AllClinical*_Doc.zip"
     
     filelist = glob.glob(indir)
    
@@ -162,7 +147,9 @@ def main():
         pdf = zf.read(vardefs)
         txt = pdf2text(pdf)
         
-        convert_text_file(txt)
-    
+        print vardefs
+        data = convert_text_file(txt)
+     
+        print vardefs,  data[0:2],len(data)
 
 main()
