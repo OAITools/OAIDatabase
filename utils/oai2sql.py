@@ -2,19 +2,24 @@
 # -*- coding: utf-8 -*-
 '''
 ---------------------------------------------------
-Initialize Osteoarthritis Initiative (OAI) Database
+Convert Osteoarthritis Initiative (OAI) 
+SAS Data to Postgres SQL files
 ---------------------------------------------------
 
-This is pretty tedious. SAS XPORT files (*.xpt files) don't appear to have an 
-open source reader implementation, at least not the compressed V8 variety. The 
-Python library xport fails to read OAI xpt files, meaning we can't use 
-native SAS column information to generate our database schema. 
+This is a bit tedious. OAI data is distributed in flat files and SAS files,
+but it would be more convenient to have a database back-end, representing
+data sets as views.
 
-Instead, we make use of the PDFs provided that describe data format and labels.
-We convert PDFs to text, then use a script to generate a data dictionary of
-column names, data type, and label. This dictionary is used by init-db.py
-to generate our table schema.
+SAS files (sas7bdat files) can be read using the  Python library 
+sas7bdat-2.0.5 which gives us access to column data format and descriptions.
 
+Since metadata like categories and subcategories isn't provided in non-PDF
+form, we convert PDFs to text, then use a script to generate a dictionary
+of metadata
+
+DEPENDANCES:
+* sas7bdat-2.0.5    https://pypi.python.org/pypi/sas7bdat
+* pdftotext v3.04   http://www.foolabs.com/xpdf/download.html 
 
 @author: Jason Alan Fries <jfries [at] stanford.edu>
 
@@ -25,6 +30,7 @@ import zipfile
 import os
 import sys
 import subprocess
+import operator
 import bz2
 from subprocess import Popen, PIPE
 import re
@@ -62,8 +68,7 @@ def pdf2text(data,layout=True,tmpdir="/tmp"):
 
 def convert_text_file(txt):
     ''' Convert a OAI data description file into a mapping of 
-    variable names and descriptions. This is a rather ugly hack since
-    we can't seem to read compressed V9 XPT files directly in Python :(
+    variable names and descriptions. This is a rather ugly hack.
     '''
     
     # split by page
@@ -138,9 +143,11 @@ def convert_text_file(txt):
         
         
 def load_metadata(filename):
-    '''Ugly hack for parsing data out of variable description PDF
-    (VG_Variable.pdf) provided by the OAI. File is converted to text using
+    '''Parse data out of variable description PDF (VG_Variable.pdf) provided 
+    by the OAI. File is converted to text using:
+    
     pdftotext -table <INPUT> <OUTPUT>
+    
     This file gives us category, subcategory, and data set information, which
     I can't seem to locate as independant data sets on the OAI web site.
     
@@ -210,31 +217,59 @@ def load_metadata(filename):
                     
                     record["category"] += [lines[j][0:record["cat-span"]].strip()]
                     record["subcategory"] += [lines[j][record["cat-span"]:].strip()]
-                
+                    
                 break
                 
-        # Fix labels for complete records. Ignore empty records
+        # Fix labels for complete records. Ignore empty records.
+        # Categories can be duplicated, so ensure labels are unique.
         if sum([1 if v else 0 for v in record.values()]):
             record["label"] = re.sub("\s{2,}"," ",record["label"])
             record["comments"] = re.sub("\s{2,}"," ",record["comments"])
+            record["category"] = {x:1 for x in record["category"]}.keys()
+            record["subcategory"] = {x:1 for x in record["subcategory"]}.keys()
             datdict[record["id"]] = record
 
     return datdict
 
 
-def metadata_schema(metadata):
-    '''Generate two SQL tables:
-    1) Category information
-    2) Dataset information
+def sql_populate_metadata(metadata):
+    '''Generate two SQL tables using hand-coded schema from oai.sql
+        1. Category information
+        2. Dataset information
+        
     '''
-    return
-    for varname in metadata:
-        print metadata[varname]
-
-
-
+    CATEGORY = 1
+    SUBCATEGORY = 2
     
-def dataset_schema(tbl_name, data, metadata):
+    cat_schema = "INSERT INTO categories (var_name, cat_type, cat_name) VALUES"
+    dat_schema = "INSERT INTO datasets (var_name, dataset, collect_form, comment) VALUES"
+    
+    categories = []
+    datasets = []
+    
+    # populate tables
+    for var_name in metadata:
+        
+        for cat in metadata[var_name]["category"]:
+            categories += ["\t('%s', %s, '%s')" % (var_name, CATEGORY, cat)]
+        
+        for subcat in metadata[var_name]["subcategory"]:
+            categories += ["\t('%s', %s, '%s')" % (var_name, SUBCATEGORY, subcat)]
+        
+        ds = "'%s'" % metadata[var_name]["dataset"]
+        collect = "'%s'" % metadata[var_name]["collection"]
+        cmmnt = "NULL" if metadata[var_name]["comments"] == "None" else "'%s'" % metadata[var_name]["comments"]
+        datasets += [(var_name, ds, collect, cmmnt)]
+        
+    # sort by dataset
+    datasets = sorted(datasets,key=operator.itemgetter(1),reverse=0)
+    datasets = map(lambda x:"\t('%s', %s, %s, %s)" % x,datasets)
+    
+    print "%s\n%s;" % (cat_schema, ",\n".join(categories))
+    print
+    print "%s\n%s;" % (dat_schema, ",\n".join(datasets))
+    
+def sql_dataset_schema(tbl_name, sasheader, metadata):
     '''
     '''
     dtypes = {"MMDDYY":"DATE","":"NUMERIC","$":"TEXT"}
@@ -245,16 +280,14 @@ def dataset_schema(tbl_name, data, metadata):
     # 1. Create Table Schema (using SAS format field)
     #
     sql = []
-    #col_idx = {}
-    for i, col in enumerate(data.parent.columns):
+    for i, col in enumerate(sasheader.parent.columns):
         null = " NOT NULL" if col.name in notnull else ""
         dtype = "NUMERIC"
         if col.format in dtypes:
             dtype = dtypes[col.format]
         if col.name in manual:
             dtype = manual[col.name]
-        
-        #col_idx[col.name] = 1
+
         sql += ["\t%s %s%s" % (col.name, dtype, null)]
     
     sql += ["PRIMARY KEY(ID)"]
@@ -267,7 +300,7 @@ def dataset_schema(tbl_name, data, metadata):
     #
     sql = []
     #for var in metadata:
-    for i, col in enumerate(data.parent.columns):
+    for i, col in enumerate(sasheader.parent.columns):
         var = col.name
         # only include column defs for this table
         if var not in metadata:
@@ -277,7 +310,22 @@ def dataset_schema(tbl_name, data, metadata):
     
     comment_sql = "\n".join(sql)
     
-    return 
+    print table_sql
+    print comment_sql
+    
+    
+
+def sql_insert(tbl, schema, values):
+    '''Helper function for generating sql
+    '''
+    sql = "INSERT INTO %s (%s) VALUES" % (tbl, ", ".join(schema))
+    
+    rows = []
+    for row in values:
+        row = tuple(["%s" % v if v else "NULL" for v in row])
+        rows += ["\t%s" % (row,)]
+        
+    return "%s\n%s;" % (sql, ",\n".join(rows))
 
 def create_sql_schema(header,metadata):
     
@@ -295,30 +343,21 @@ def create_sql_schema(header,metadata):
     for name in d:  
         print name, d[name]["col"].format
     
-
-'''
-CREATE TABLE AppDoc (
-        AppDocID INTEGER NOT NULL,
-        ApplNo VARCHAR(6) NOT NULL,
-        SeqNo VARCHAR(4) NOT NULL,
-        DocType VARCHAR(50) NOT NULL,
-        DocTitle VARCHAR(100),
-        DocURL VARCHAR(200),
-        DocDate DATE,
-        ActionType VARCHAR(10) NOT NULL,
-        DuplicateCounter INTEGER,
-        PRIMARY KEY(AppDocID) );
-'''
-        
+     
 def main():
     
-    # Load category/subcategory information 
+    #
+    # 1. Category/sub-category information 
+    #
     metatdata = load_metadata("../data/VG_Variable_tables.bz2")
+    sql_populate_metadata(metatdata)
     
-    metadata_schema(metatdata)
-    
-    
+    rootdir = "/Users/fries/Desktop/data/"
+    dirs = [x for x in os.listdir(rootdir) if not os.path.isfile(rootdir+x)]
+  
+    #
     # load SAS files
+    #
     indir = "/Users/fries/Desktop/data/clinical/AllClinical*_SAS.zip"
     filelist = glob.glob(indir)
     
@@ -334,22 +373,21 @@ def main():
         with open(tmpfile,"wb") as tmp:
             tmp.write(data)
         
-        
         d = sas7bdat.SAS7BDAT(tmpfile)
         
         # SAS metadata (contains label, format)
-        tbl_name = datafile.split(".")[0].upper()
-        dataset_schema(tbl_name, d.header, metatdata)
+        tbl_name = datafile.split(".")[0]
+        sql_dataset_schema(tbl_name, d.header, metatdata)
         
-        #table_sql = "CREATE TABLE AppDoc (\n%s,\nPRIMARY KEY(AppDocID));"
-        #table_sql = table_sql % dataset_schema(d.header,metatdata)
-        #print table_sql
-        sys.exit()
         
-        for i,row in df.iterrows():
-            print i
-            for value in row:
-                print value, type(value)
+        continue
+        
+        # SAS data: create database INSERT statements
+        rows = [row for row in d]
+        schema = rows[0]
+        sql_insert(tbl_name,schema,rows[1:])
+        
+        
         
            
     
