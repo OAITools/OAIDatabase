@@ -32,12 +32,14 @@ import sys
 import subprocess
 import operator
 import bz2
-from subprocess import Popen, PIPE
 import re
 import sas7bdat
-from _sqlite3 import Row
+import argparse
 
 PDF2TEXT = "/usr/local/bin/pdftotext"
+
+def psql_esc_str(s):
+    return s.replace("'","''")
 
 def pdf2text(data,layout=True,tmpdir="/tmp"):
     ''' Convert PDF document to plain text file using external pdftotext
@@ -64,7 +66,6 @@ def pdf2text(data,layout=True,tmpdir="/tmp"):
     os.remove(txtfile)
     
     return txt
-
 
 def convert_text_file(txt):
     ''' Convert a OAI data description file into a mapping of 
@@ -140,8 +141,7 @@ def convert_text_file(txt):
             data += [row]
             
     return data
-        
-        
+                
 def load_metadata(filename):
     '''Parse data out of variable description PDF (VG_Variable.pdf) provided 
     by the OAI. File is converted to text using:
@@ -231,6 +231,20 @@ def load_metadata(filename):
 
     return datdict
 
+metadata_schema = '''
+CREATE TABLE categories (
+        var_id VARCHAR(20) NOT NULL,
+        type INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        PRIMARY KEY(var_id, name, type) );
+
+CREATE TABLE datasets (
+        var_id VARCHAR(20) NOT NULL,
+        name VARCHAR(128) NOT NULL,
+        collect_form TEXT,
+        comment TEXT,
+        PRIMARY KEY(var_id) );
+'''        
 
 def sql_populate_metadata(metadata):
     '''Generate two SQL tables using hand-coded schema from oai.sql
@@ -241,8 +255,8 @@ def sql_populate_metadata(metadata):
     CATEGORY = 1
     SUBCATEGORY = 2
     
-    cat_schema = "INSERT INTO categories (var_name, cat_type, cat_name) VALUES"
-    dat_schema = "INSERT INTO datasets (var_name, dataset, collect_form, comment) VALUES"
+    cat_schema = "INSERT INTO categories (var_id, type, name) VALUES"
+    dat_schema = "INSERT INTO datasets (var_id, name, collect_form, comment) VALUES"
     
     categories = []
     datasets = []
@@ -251,29 +265,37 @@ def sql_populate_metadata(metadata):
     for var_name in metadata:
         
         for cat in metadata[var_name]["category"]:
+            cat = psql_esc_str(cat)
             categories += ["\t('%s', %s, '%s')" % (var_name, CATEGORY, cat)]
         
         for subcat in metadata[var_name]["subcategory"]:
+            subcat = psql_esc_str(subcat)
             categories += ["\t('%s', %s, '%s')" % (var_name, SUBCATEGORY, subcat)]
         
-        ds = "'%s'" % metadata[var_name]["dataset"]
-        collect = "'%s'" % metadata[var_name]["collection"]
-        cmmnt = "NULL" if metadata[var_name]["comments"] == "None" else "'%s'" % metadata[var_name]["comments"]
-        datasets += [(var_name, ds, collect, cmmnt)]
         
+        # escape single quotes
+        collect = psql_esc_str(metadata[var_name]["collection"])
+        cmmnt = psql_esc_str(metadata[var_name]["comments"])
+        ds = psql_esc_str(metadata[var_name]["dataset"])
+        
+        ds = "'%s'" % ds
+        collect = "'%s'" % collect
+        cmmnt = "NULL" if cmmnt == "None" else "'%s'" % cmmnt
+        datasets += [(var_name, ds, collect, cmmnt)]
+  
     # sort by dataset
     datasets = sorted(datasets,key=operator.itemgetter(1),reverse=0)
     datasets = map(lambda x:"\t('%s', %s, %s, %s)" % x,datasets)
-    
+
+    print metadata_schema
     print "%s\n%s;" % (cat_schema, ",\n".join(categories))
     print
     print "%s\n%s;" % (dat_schema, ",\n".join(datasets))
     
-def sql_dataset_schema(tbl_name, sasheader, metadata):
+def sql_dataset_schema(tbl_name, sasheader, metadata, pkeys):
     '''
     '''
-    dtypes = {"MMDDYY":"DATE","":"NUMERIC","$":"TEXT"}
-    manual = {"VERSION":"TEXT"}
+    dtypes = {"MMDDYY":"DATE"}
     notnull = {"ID":1,"VERSION":1}
     
     #
@@ -283,14 +305,15 @@ def sql_dataset_schema(tbl_name, sasheader, metadata):
     for i, col in enumerate(sasheader.parent.columns):
         null = " NOT NULL" if col.name in notnull else ""
         dtype = "NUMERIC"
+        
         if col.format in dtypes:
             dtype = dtypes[col.format]
-        if col.name in manual:
-            dtype = manual[col.name]
+        elif col.type == "string":
+            dtype = "TEXT"
 
         sql += ["\t%s %s%s" % (col.name, dtype, null)]
     
-    sql += ["PRIMARY KEY(ID)"]
+    sql += ["PRIMARY KEY(%s)" % ", ".join(pkeys) ]
     table_sql = "CREATE TABLE %s" % tbl_name
     table_sql = table_sql + "(\n%s );"
     table_sql = table_sql % ",\n".join(sql)
@@ -305,27 +328,52 @@ def sql_dataset_schema(tbl_name, sasheader, metadata):
         # only include column defs for this table
         if var not in metadata:
             continue
-        s = "COMMENT ON column %s.%s is '%s';" % (tbl_name,var,metadata[var]["label"])
+        
+        label = psql_esc_str(metadata[var]["label"])
+        s = "COMMENT ON column %s.%s is '%s';" % (tbl_name,var,label)
         sql += [s]
     
     comment_sql = "\n".join(sql)
     
     print table_sql
+    print
     print comment_sql
     
-    
-
-def sql_insert(tbl, schema, values):
-    '''Helper function for generating sql
+def sql_insert(data):
     '''
-    sql = "INSERT INTO %s (%s) VALUES" % (tbl, ", ".join(schema))
+    TODO: This should be done using using an existing database where we use
+    Python to directly insert data instead of using an intermediary SQL text
+    format. 
+    '''
+    # use SAS header information to get table name and data types
+    tbl_name = data.header.properties.name
+    dtypes = {col.name:col.type if col.format !="MMDDYY" else "DATE" 
+              for col in data.header.parent.columns}
     
-    rows = []
-    for row in values:
-        row = tuple(["%s" % v if v else "NULL" for v in row])
-        rows += ["\t%s" % (row,)]
+    schema = ""
+    for i,row in enumerate(data):
         
-    return "%s\n%s;" % (sql, ",\n".join(rows))
+        if i == 0:
+            dtypes = [dtypes[v] for v in row]
+            schema = ",".join(row)
+            sys.stdout.write("INSERT INTO %s (%s) VALUES\n" % (tbl_name,schema))
+            continue
+      
+        if i > 1:
+            sys.stdout.write(",\n")
+        
+        # escape strings (' and \ characters) and add NULL values to row
+        row = [v if v else "NULL" for v in row]
+        row = [v.replace("'","''").replace("\\","\\\\") if type(v) is str else v 
+               for v in row]
+        row = ["%s" % v if dtypes[i]=="number" or v == "NULL" else "'%s'" % v 
+               for i,v in enumerate(row)]
+       
+        row =",".join(row)
+        sys.stdout.write("\t(%s)" % row)
+     
+    sys.stdout.write(";\n")
+    
 
 def create_sql_schema(header,metadata):
     
@@ -343,52 +391,87 @@ def create_sql_schema(header,metadata):
     for name in d:  
         print name, d[name]["col"].format
     
-     
-def main():
+def main(args):
     
     #
     # 1. Category/sub-category information 
     #
     metatdata = load_metadata("../data/VG_Variable_tables.bz2")
     sql_populate_metadata(metatdata)
-    
-    rootdir = "/Users/fries/Desktop/data/"
-    dirs = [x for x in os.listdir(rootdir) if not os.path.isfile(rootdir+x)]
-  
-    #
-    # load SAS files
-    #
-    indir = "/Users/fries/Desktop/data/clinical/AllClinical*_SAS.zip"
-    filelist = glob.glob(indir)
-    
-    for zfname in filelist:
-        zf = zipfile.ZipFile(zfname, 'r')
-        manifest = sorted(zf.namelist())
-        datafile = [x for x in manifest if "sas7bdat" in x][0]
 
-        data = zf.read(datafile)
-        tmpfile = "/tmp/temp.sas7bdat"
-        
-        # dump PDF to a temporary file
-        with open(tmpfile,"wb") as tmp:
-            tmp.write(data)
-        
-        d = sas7bdat.SAS7BDAT(tmpfile)
-        
-        # SAS metadata (contains label, format)
-        tbl_name = datafile.split(".")[0]
-        sql_dataset_schema(tbl_name, d.header, metatdata)
-        
-        
-        continue
-        
-        # SAS data: create database INSERT statements
-        rows = [row for row in d]
-        schema = rows[0]
-        sql_insert(tbl_name,schema,rows[1:])
-        
-        
-        
-           
+    #
+    # 2: Create Table Schema
+    #    
+    datadirs = [x for x in os.listdir(args.inputdir) 
+                if not os.path.isfile(args.inputdir+x)]
+  
+
+    # MIF,X-ray, MRI, and Accelerometry are multiple-rows-per-id 
+    # so we have to manually specify a primary key to uniquely 
+    # identify rows 
+    primary_key_defs = {}
+    primary_key_defs["allclinical"] = ["ID"]
+    primary_key_defs["outcomes"] = ["ID"]
+    primary_key_defs["enrollees"] = ["ID"]
+    primary_key_defs["accelerometry"] = ["ID"]
+    primary_key_defs["mri"] = ["ID","MEXAMTP","MRBARCD"]
+    primary_key_defs["xray"] = ["ID","EXAMTP","XRBARCD"]
+    primary_key_defs["mif"] = ["ID","MIFNAME","INGCODE"]
+    primary_key_defs["acceldatabymin"] = ["ID","PAStudyDay","MINSequence"]
+    primary_key_defs["acceldatabyday"] = ["ID","PAStudyDay","VDAYSequence"]
     
-main()
+    for dir in datadirs:
+        indir = "/Users/fries/Desktop/data/%s/*_SAS.zip" % dir
+        filelist = glob.glob(indir)
+      
+        for zfname in filelist:
+            zf = zipfile.ZipFile(zfname, 'r')
+            manifest = sorted(zf.namelist())
+            sasfiles = [x for x in manifest if "sas7bdat" in x]
+            
+            for sasdat in sasfiles:
+                data = zf.read(sasdat)
+                tmpfile = "/tmp/temp.sas7bdat"
+                
+                # dump SAS to a temporary file
+                with open(tmpfile,"wb") as tmp:
+                    tmp.write(data)
+                
+                d = sas7bdat.SAS7BDAT(tmpfile)
+                
+                # get primary key
+                dataset = sasdat.split(".")[0]
+                dataset,version = dataset[0:len(dataset)-2], dataset[-2:]
+                if not version.isdigit():
+                    dataset = dataset + version
+                    version = None
+                    
+                pkeys = map(lambda x: x if x=="ID" else "V"+version+x, 
+                            primary_key_defs[dataset])
+                
+                # SAS metadata (contains label, format)
+                tbl_name = sasdat.split(".")[0]
+                sql_dataset_schema(tbl_name, d.header, metatdata, pkeys)
+                
+                # SAS data: create database INSERT statements
+                sql_insert(d)
+                
+    
+if __name__ == '__main__':
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i","--inputdir", type=str, 
+                        help="data set input directory")
+    #parser.add_argument("-o","--output", type=str, 
+    #                    help="output file path")
+                        
+    args = parser.parse_args()
+   
+    # argument error, exit
+    if not args.inputdir:
+        parser.print_help()
+        sys.exit()
+        
+    main(args)
+    
+
