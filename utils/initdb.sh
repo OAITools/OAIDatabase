@@ -6,7 +6,6 @@
 # @email 	jason-fries [at] stanford [dot] edu
 # 
 # USAGE: initdb.sh
-# OPTIONS: -d XXX
 #
 
 DBNAME="oai";
@@ -14,5 +13,5 @@ DBNAME="oai";
 # Create database
 psql -c 'CREATE DATABASE '$DBNAME';'
 
-# Load table schema
-psql -d $DBNAME -f oai.sql
+# Load table schema and data
+psql -d $DBNAME -f oai-data.sql

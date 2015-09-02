@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 '''
+
+TODO -- need to sort out https authentication using
+form data + httplib. Until then, we just have to 
+manually download all datasets. 
+
 ---------------------------------------------------
 Download Osteoarthitis Initiative (OAI) Datasets
 ---------------------------------------------------

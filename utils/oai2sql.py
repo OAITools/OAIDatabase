@@ -6,7 +6,7 @@ Convert Osteoarthritis Initiative (OAI)
 SAS Data to Postgres SQL files
 ---------------------------------------------------
 
-This is a bit tedious. OAI data is distributed in flat files and SAS files,
+This is an ugly script. OAI data is distributed in flat files and SAS files,
 but it would be more convenient to have a database back-end, representing
 data sets as views.
 
@@ -335,9 +335,9 @@ def sql_dataset_schema(tbl_name, sasheader, metadata, pkeys):
     
     comment_sql = "\n".join(sql)
     
-    print table_sql
-    print
-    print comment_sql
+    sys.stdout.write(table_sql)
+    sys.stdout.write("\n\n")
+    sys.stdout.write(comment_sql)
     
 def sql_insert(data):
     '''
@@ -364,12 +364,12 @@ def sql_insert(data):
         
         # escape strings (' and \ characters) and add NULL values to row
         row = [v if v else "NULL" for v in row]
-        row = [v.replace("'","''").replace("\\","\\\\") if type(v) is str else v 
+        row = [v.replace("'","''").replace("\\","\\\\") if type(v) in [str,unicode] else v 
                for v in row]
         row = ["%s" % v if dtypes[i]=="number" or v == "NULL" else "'%s'" % v 
                for i,v in enumerate(row)]
-       
         row =",".join(row)
+        
         sys.stdout.write("\t(%s)" % row)
      
     sys.stdout.write(";\n")
@@ -387,7 +387,6 @@ def create_sql_schema(header,metadata):
         col.name = col.name.upper()
         d[col.name] = {"col":col, "category":[], "subcategory":[]}
         
-    
     for name in d:  
         print name, d[name]["col"].format
     
@@ -466,7 +465,7 @@ if __name__ == '__main__':
     #                    help="output file path")
                         
     args = parser.parse_args()
-   
+
     # argument error, exit
     if not args.inputdir:
         parser.print_help()
