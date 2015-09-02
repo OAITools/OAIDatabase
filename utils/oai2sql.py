@@ -21,6 +21,20 @@ DEPENDANCES:
 * sas7bdat-2.0.5    https://pypi.python.org/pypi/sas7bdat
 * pdftotext v3.04   http://www.foolabs.com/xpdf/download.html 
 
+
+CAVEATS:
+The X-ray,MRI, and MIF data sets have multiple records per subject and their
+documentation states that a tuple of the form
+    X-ray   (ID, EXAMTP, XRBARCD) 
+    MIF     (ID, MEXAMTP, MRBARCD) 
+    MRI     (ID, MEXAMTP, MRBARCD) 
+uniquely identifies rows. *However* this isn't true in cases where subjects
+did not receive an Xray, MRI, or MIF. In this case, a non-unique dummy row is
+inserted into the table.
+
+As a hack/fix, we remove the primary key constraint for these tables. 
+
+
 @author: Jason Alan Fries <jfries [at] stanford.edu>
 
 '''
@@ -313,7 +327,9 @@ def sql_dataset_schema(tbl_name, sasheader, metadata, pkeys):
 
         sql += ["\t%s %s%s" % (col.name, dtype, null)]
     
-    sql += ["PRIMARY KEY(%s)" % ", ".join(pkeys) ]
+    if pkeys:
+        sql += ["PRIMARY KEY(%s)" % ", ".join(pkeys) ]
+    
     table_sql = "CREATE TABLE %s" % tbl_name
     table_sql = table_sql + "(\n%s );"
     table_sql = table_sql % ",\n".join(sql)
@@ -413,11 +429,18 @@ def main(args):
     primary_key_defs["outcomes"] = ["ID"]
     primary_key_defs["enrollees"] = ["ID"]
     primary_key_defs["accelerometry"] = ["ID"]
-    primary_key_defs["mri"] = ["ID","MEXAMTP","MRBARCD"]
-    primary_key_defs["xray"] = ["ID","EXAMTP","XRBARCD"]
-    primary_key_defs["mif"] = ["ID","MIFNAME","INGCODE"]
     primary_key_defs["acceldatabymin"] = ["ID","PAStudyDay","MINSequence"]
     primary_key_defs["acceldatabyday"] = ["ID","PAStudyDay","VDAYSequence"]
+    
+    # HACK -- remove primary key constraint for multi-record tables
+    # should add unique dummy variable to explicitly declare missing record
+    primary_key_defs["mri"] = []
+    primary_key_defs["xray"] = []
+    primary_key_defs["mif"] = []
+    
+    #primary_key_defs["mri"] = ["ID","MEXAMTP","MRBARCD"]
+    #primary_key_defs["xray"] = ["ID","EXAMTP","XRBARCD"]
+    #primary_key_defs["mif"] = ["ID","MIFNAME","INGCODE"]
     
     for dir in datadirs:
         indir = "/Users/fries/Desktop/data/%s/*_SAS.zip" % dir
