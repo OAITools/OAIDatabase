@@ -354,8 +354,47 @@ def sql_dataset_schema(tbl_name, sasheader, metadata, pkeys):
     sys.stdout.write(table_sql)
     sys.stdout.write("\n\n")
     sys.stdout.write(comment_sql)
+    sys.stdout.write("\n\n")
+
+
+
+def sql_insert(data,row_max=1000):
+  
+    # use SAS header information to get table name and data types
+    tbl_name = data.header.properties.name
+    dtypes = {col.name:col.type if col.format !="MMDDYY" else "DATE" 
+              for col in data.header.parent.columns}
     
-def sql_insert(data):
+    schema = ""
+    rows = []
+    for i,row in enumerate(data):
+        
+        if i == 0:
+            dtypes = [dtypes[v] for v in row]
+            schema = ",".join(row)
+            continue
+          
+        # escape strings (' and \ characters) and add NULL values to row
+        row = [v if v else "NULL" for v in row]
+        row = [v.replace("'","''").replace("\\","\\\\") if type(v) in [str,unicode] else v 
+               for v in row]
+        row = ["%s" % v if dtypes[i]=="number" or v == "NULL" else "'%s'" % v 
+               for i,v in enumerate(row)]
+        row =",".join(row)
+        rows += [row]
+        
+        if len(rows) > row_max:
+            
+            sys.stdout.write("\nINSERT INTO %s (%s) VALUES\n" % (tbl_name,schema))
+            rows = map(lambda x:"\t(%s)" % x, rows)
+            rows = ",\n".join(rows)
+            sys.stdout.write(rows)
+            sys.stdout.write(";\n")
+            
+            rows = []
+
+    
+def sql_insert_all(data):
     '''
     TODO: This should be done using using an existing database where we use
     Python to directly insert data instead of using an intermediary SQL text
@@ -478,12 +517,13 @@ def main(args):
                 # SAS data: create database INSERT statements
                 sql_insert(d)
                 
-    
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     parser.add_argument("-i","--inputdir", type=str, 
                         help="data set input directory")
+    #parser.add_argument("-s","--schema", type=str, 
+    #                    help="data set input directory")
     #parser.add_argument("-o","--output", type=str, 
     #                    help="output file path")
                         
