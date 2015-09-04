@@ -356,8 +356,6 @@ def sql_dataset_schema(tbl_name, sasheader, metadata, pkeys):
     sys.stdout.write(comment_sql)
     sys.stdout.write("\n\n")
 
-
-
 def sql_insert(data,row_max=1000):
   
     # use SAS header information to get table name and data types
@@ -476,11 +474,9 @@ def main(args):
     primary_key_defs["mri"] = []
     primary_key_defs["xray"] = []
     primary_key_defs["mif"] = []
-    
-    #primary_key_defs["mri"] = ["ID","MEXAMTP","MRBARCD"]
-    #primary_key_defs["xray"] = ["ID","EXAMTP","XRBARCD"]
-    #primary_key_defs["mif"] = ["ID","MIFNAME","INGCODE"]
-    
+   
+    primary_key_defs["kmri_sq_bicl"] = []
+   
     for dir in datadirs:
         indir = "/Users/fries/Desktop/data/%s/*_SAS.zip" % dir
         filelist = glob.glob(indir)
@@ -515,7 +511,9 @@ def main(args):
                 sql_dataset_schema(tbl_name, d.header, metatdata, pkeys)
                 
                 # SAS data: create database INSERT statements
-                sql_insert(d)
+                #sql_insert(d)
+                #sql_insert_all(d)
+
                 
 if __name__ == '__main__':
     

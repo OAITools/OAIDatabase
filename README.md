@@ -7,10 +7,13 @@ Database Instantiation:
 
 Recommended software
 
-Python packages
-sklearn
-rpy2 (R interface)
+**Python packages:**
 
-IDEs
-RStudio
-Eclipse
+* sklearn
+* psycopg2 (Postgresql interface)
+* rpy2 (R interface)
+
+**IDEs**
+
+* RStudio
+* Eclipse
