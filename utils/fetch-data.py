@@ -62,20 +62,45 @@ httplib.HTTPSConnection = HTTPSConnection
 # ssl_version corrections are done
 # ====================================================================
 
-BASE_URL = "https://oai.epi-ucsf.org/datarelease/DataAgreementCheck.asp?file=%s"
+FILE_URL = "https://oai.epi-ucsf.org/datarelease/DataAgreementCheck.asp?file=%s"
+
+def authenticate(username,password):
+    
+    # authenticate
+    browser = mechanize.Browser()
+    cookies = cookielib.LWPCookieJar()
+    browser.set_cookiejar(cookies)
+   
+    browser.set_handle_equiv(True)
+    browser.set_handle_gzip(True)
+    browser.set_handle_redirect(True)
+    browser.set_handle_referer(True)
+    browser.set_handle_robots(False)
+
+    browser.set_handle_refresh(mechanize._http.HTTPRefreshProcessor(), max_time=1)
+    OAI_URL = "https://oai.epi-ucsf.org/datarelease/UserLogonFunction.asp"
+    r = browser.open(OAI_URL)
+
+    # Login using form 
+    browser.select_form(nr=0) # first (only) form on the page
+    browser.form["Username"] = username
+    browser.form["Password"] = password
+    
+    browser.submit()
+    
+    return browser
 
 def main(args):
     
-    datasets = ["AllClinical%s_SAS.zip","MIF%s_SAS.zip","MRI%s_SAS.zip",
-                "Xray%s_SAS.zip"]
-    datasets_docs = ["AllClinical%s_Doc.zip","MIF%s_Doc.zip","MRI%s_Doc.zip",
-                     "Xray%s_Doc.zip"]
+    # load data set list
+    datasets = map(lambda x:x.strip(), open("datasets.txt","rU").readlines())
+    datasets = [x for x in datasets if x and x[0] != "#"]
     
-
     # get login password
     args.username = "jfries"
     pw = "rubbish11" #getpass.getpass()
    
+    # authenticate
     browser = mechanize.Browser()
     cookies = cookielib.LWPCookieJar()
     browser.set_cookiejar(cookies)
@@ -110,6 +135,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     parser.add_argument("-u","--username", type=str, help="OAI username")
+    parser.add_argument("-o","--outputdir", type=str, help="Data output dir")
     args = parser.parse_args()
     
     # argument error, exit
