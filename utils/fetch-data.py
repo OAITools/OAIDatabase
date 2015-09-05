@@ -21,6 +21,9 @@ import getpass
 import argparse
 import urllib2
 
+import mechanize
+import cookielib
+import urllib
 
 import httplib
 from httplib import HTTPConnection, HTTPS_PORT
@@ -30,6 +33,7 @@ import socket
 # There is a SSL bug that generates errors of the form
 # ssl.SSLEOFError: EOF occurred in violation of protocol (_ssl.c:590)
 # This hack fixes those issues
+# ====================================================================
 class HTTPSConnection(HTTPConnection):
     "This class allows communication via SSL."
     default_port = HTTPS_PORT
@@ -56,8 +60,7 @@ class HTTPSConnection(HTTPConnection):
 #now we override the one in httplib
 httplib.HTTPSConnection = HTTPSConnection
 # ssl_version corrections are done
-
-
+# ====================================================================
 
 BASE_URL = "https://oai.epi-ucsf.org/datarelease/DataAgreementCheck.asp?file=%s"
 
@@ -70,38 +73,38 @@ def main(args):
     
 
     # get login password
-    pw = getpass.getpass()
+    args.username = "jfries"
+    pw = "rubbish11" #getpass.getpass()
    
-    # build authentication
-    opener = urllib2.build_opener(urllib2.HTTPCookieProcessor())
-    urllib2.install_opener(opener)
+    browser = mechanize.Browser()
+    cookies = cookielib.LWPCookieJar()
+    browser.set_cookiejar(cookies)
+   
+    browser.set_handle_equiv(True)
+    browser.set_handle_gzip(True)
+    browser.set_handle_redirect(True)
+    browser.set_handle_referer(True)
+    browser.set_handle_robots(False)
 
-    #https://oai.epi-ucsf.org/datarelease/UserAccountHome.asp
-    auth_url="https://oai.epi-ucsf.org/datarelease/UserLogonFunction.asp"
+    browser.set_handle_refresh(mechanize._http.HTTPRefreshProcessor(), max_time=1)
+    OAI_URL = "https://oai.epi-ucsf.org/datarelease/UserLogonFunction.asp"
+    r = browser.open(OAI_URL)
+
+    # Login using form 
+    browser.select_form(nr=0) # first (only) form on the page
+    browser.form["Username"] = args.username
+    browser.form["Password"] = pw
     
-    c = httplib.HTTPSConnection("oai.epi-ucsf.org")
+    browser.submit()
     
     
-    c.request("GET", "/datarelease/")
-    response = c.getresponse()
+    test = "https://oai.epi-ucsf.org/datarelease/DataAgreementCheck.asp?file=AllClinical00_SAS.zip"
+    outfile = "/tmp/" +test.split("file=")[-1]
+    print outfile
     
-    print response.status, response.reason
-    data = response.read()
-    print data
-        
-    
-    '''
-    try:
-        response = urllib2.urlopen('https://oai.epi-ucsf.org') 
-        print 'response headers: "%s"' % response.info()
-    except IOError, e:
-        if hasattr(e, 'code'): # HTTPError
-            print 'http error code: ', e.code
-        elif hasattr(e, 'reason'): # URLError
-            print "can't connect, reason: ", e.reason
-        else:
-            raise
-    '''
+    browser.retrieve(test,outfile)
+    print "DONE"
+    sys.exit()
     
 if __name__ == '__main__':
     
@@ -110,9 +113,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     # argument error, exit
-    if not args.username:
-        parser.print_help()
-        sys.exit()
+    #if not args.username:
+    #    parser.print_help()
+    #    sys.exit()
     
     main(args)
     

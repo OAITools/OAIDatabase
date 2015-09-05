@@ -21,6 +21,10 @@ from statsmodels.distributions.mixture_rvs import mixture_rvs
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.cross_validation import KFold
+from sklearn.cross_validation import train_test_split
+from sklearn.cross_validation import cross_val_score
+from sklearn.metrics import mean_squared_error,r2_score
+from sklearn.learning_curve import learning_curve
 
 # By default psycopg2 converts postgresql decimal/numeric types 
 # to Python Decimal objects. This function forces a float type cast instead
@@ -53,32 +57,61 @@ def main(args):
     # model WOMAC Pain (V00WOMKPL) as a function of KOOS Pain (V00KOOSKPL)
     # x: KOOS is on a scale of 0..100 where 0 indicates extreme problems
     # y: WOMAC is on a scale of 0..20 where 0 indicates no difficulty
-    
     query = """SELECT V00WOMKPL,V00KOOSKPL FROM allclinical00 
     WHERE V00WOMKPL IS NOT NULL AND V00KOOSKPL IS NOT NULL;"""
     cur.execute(query) 
     results = cur.fetchall()
     
     # fix a random seed so that our random number generation is deterministic
-    numpy.random.seed(123456)
+    np.random.seed(123456)
     
-    y,x = zip(*results) 
-    x = np.array(x).reshape(-1,1)
+    # Pull out a random choice of 25% of data to use as a final test set;
+    # we will *not* use this in any way for training our model. For 
+    # simple linear regression we don't really have any hyperparameters to 
+    # tune, so we don't create a validation set. Generally, Hastie et al.   
+    # suggest Training (50%) Validation (25%) Training (25%) 
+    train,test = train_test_split(results, test_size=0.25)
+    
+    y,X = zip(*train) 
+    # * the asterisk expands tuples [(1,2),(3,4)] becomes [1,3] and [2,4]
+    X = np.array(X).reshape(-1,1)
     y = np.array(y).reshape(-1,1)
     
-    # * the asterisk expands tuples [(1,2),(3,4)] becomes [1,3] and [2,4]
-  
-    # evaluate our performance using 5-fold cross validation
+    # Evaluate our model using 5-fold cross validation
     model = LinearRegression()
+    kf = KFold(X.shape[0], n_folds=5) # k-Fold cross-validation iterator. 
     
-    # k-Fold cross-validation iterator. 
-    kf = KFold(x.shape[0], n_folds=5)
-    for train, test in kf:
-        
-        
+    scores = cross_val_score(model,X,y,cv=kf,scoring="mean_squared_error")
+    print("Mean Training Set Error (MSE): %.2f" % np.mean(scores))
     
+    # Now fit on all our training data and then see how 
+    # well we predict testing set data
+    model.fit(X,y)
+    y_test,X_test = zip(*test)
+    X_test = np.array(X_test).reshape(-1,1)
+    y_test = np.array(y_test).reshape(-1,1)
+    y_pred = model.predict(X_test)
+    
+    print("Test Set Error: %.2f" % mean_squared_error(y_test,y_pred))
+    print(r2_score(y_test,y_pred))
+    
+    # Let's plot our test data and the corresponding regression fit
+    plt.scatter(X_test, y_test, color='black')
+    plt.plot(X_test, y_pred, color='blue',linewidth=2)
+    plt.show()
+    
+    # ..and let's plot our learning curve
+    train_sizes, train_scores, valid_scores = learning_curve(model, X, y, train_sizes=range(10,1000,10), cv=5)
     
     sys.exit()
+    
+    # We can also manually access the folds of a CV iterator
+    for ktrain, ktest in kf:
+        pass
+    
+    
+    # For regression, sklearn hs several built in measures
+    
     
     #
     # statsmodels visuzliation demo
