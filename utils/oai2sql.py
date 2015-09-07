@@ -203,7 +203,7 @@ def table_parser(rows):
         table_data["type"] = "continuous"
         table_data["label_n"] = 0
         return table_data
-    
+
     ftable = []
     for line in dtable:
         line = line.replace("''  :","'':")
@@ -227,40 +227,36 @@ def table_parser(rows):
                     print "FATAL ERROR -- NO MATCH"
                     sys.exit()
             
-        # variable type
-        ftable += [values]
-        # how many fields?
-        labels = [re.match("^(.*):",x[0]) for x in ftable]
+        # variable type (remove rows that correspond to tables that
+        # span pages
+        if values != ['Value', 'N', '%', 'Cumulative N', 'Cumulative %']:
+            ftable += [values]
         
     table_data["type"] = "nominal"
+    labels = [re.match("^(.*):",x[0]) for x in ftable]
     
-    # No number, just use all labels as possible classes
-    '''
-    if None in labels:
-        print labels
-        table_data["label_n"] = len(labels)
-        table_data["values"] = "|".join([x[0] for x in ftable]) 
-        print table_data["values"]
-        
-        return table_data
-    '''
-    
-    # create class labels. For simplicities sake we 
-    # don't assume an total ordering on these classes,
-    # though several variables do have ordinal scales. 
-    labels = [x.group(0).replace(":","") for x in labels]
-    labels = [int(x) if x.isdigit() else None for x in labels]
-    
+    # class labels are *not* numbered
     if len(labels) == labels.count(None):
-        labels = [re.match("^(.*):",x[0]) for x in ftable]
-        labels = [x.group(0).replace(":","").replace("'","") for x in labels]
+        labels = [x[0] for x in ftable]
         table_data["values"] = "|".join(labels)
         table_data["label_n"] = len(labels)
+        
+    elif None in labels:
+        
+        labels = [x.group(0) if x else "" for x in labels]
+        table_data["values"] = "|".join(map(str,labels))
+        table_data["label_n"] = len(labels)
+    
     else:
+        # create class labels. For simplicities sake we 
+        # don't assume an total ordering on these classes,
+        # though several variables do have ordinal scales. 
+        labels = [x.group(0).replace(":","") for x in labels]
+        labels = [int(x) if x.isdigit() else None for x in labels]
         labels = {x:1 for x in labels}.keys()
         table_data["values"] = "|".join(map(str,labels))
         table_data["label_n"] = len(labels)
-
+        
     return table_data
 
 
