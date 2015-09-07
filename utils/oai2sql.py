@@ -189,7 +189,8 @@ def table_parser(rows):
     
     table_data["type"] = "$" #unique
     table_data["label_n"] = 0
-    table_data["labels"] = None
+    table_data["values"] = None
+    #table_data["label_names"] = None
     
     # no info about values -- this means a unique identifier
     if len(dtable) == 1:
@@ -234,11 +235,16 @@ def table_parser(rows):
     table_data["type"] = "nominal"
     
     # No number, just use all labels as possible classes
+    '''
     if None in labels:
+        print labels
         table_data["label_n"] = len(labels)
-        table_data["labels"] = ",".join([x[0] for x in ftable]) 
+        table_data["values"] = "|".join([x[0] for x in ftable]) 
+        print table_data["values"]
+        
         return table_data
-
+    '''
+    
     # create class labels. For simplicities sake we 
     # don't assume an total ordering on these classes,
     # though several variables do have ordinal scales. 
@@ -248,11 +254,11 @@ def table_parser(rows):
     if len(labels) == labels.count(None):
         labels = [re.match("^(.*):",x[0]) for x in ftable]
         labels = [x.group(0).replace(":","").replace("'","") for x in labels]
-        table_data["labels"] = ",".join(labels)
+        table_data["values"] = "|".join(labels)
         table_data["label_n"] = len(labels)
     else:
         labels = {x:1 for x in labels}.keys()
-        table_data["labels"] = ",".join(map(str,labels))
+        table_data["values"] = "|".join(map(str,labels))
         table_data["label_n"] = len(labels)
 
     return table_data
@@ -305,7 +311,6 @@ def load_metadata(filename):
         record["collection"] = None
         record["category"] = []
         record["subcategory"] = []
-        record["cat-span"] = None
         
         for i,line in enumerate(lines):
             
@@ -329,27 +334,9 @@ def load_metadata(filename):
             m = regex["category"].search(line)
             if m:
                 
-                print "ID:",record["id"]
                 table_data = table_parser(lines[i:])
-                
-                for key in table_data:
-                    print key,table_data[key]
-                print "-------------------"
-                continue
-                
-                offset = m.group().index("SubCategory")
-                record["cat-span"] = offset
-                reject = ["Cumulative","N"] # reject lines containing this words
-                
-                for j in range(i+1, len(lines)):
-                    
-                    if set(lines[j].split()).intersection(reject) or \
-                    lines[j][0] == " ":
-                        break
-                    
-                    record["category"] += [lines[j][0:record["cat-span"]].strip()]
-                    record["subcategory"] += [lines[j][record["cat-span"]:].strip()]
-                    
+                record.update(table_data)
+                 
                 break
        
         # Fix labels for complete records. Ignore empty records.
