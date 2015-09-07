@@ -156,6 +156,80 @@ def convert_text_file(txt):
             
     return data
                 
+                
+def table_parser(rows):
+    ''' Parse out category and variable types tables
+    '''
+    
+    #
+    # 1: Category table
+    #
+    categories ={}
+    categories["category"] = []
+    categories["subcategory"] = []
+    
+    header = rows.pop(0)
+    offset = header.index("SubCategory")
+    reject = ["Cumulative","N"] # reject lines containing this words
+    
+    for i in range(0,len(rows)):
+        
+        line = rows[i]
+        if set(line.split()).intersection(reject) or line[0] == " ":
+            break
+        
+        categories["category"] += [line[0:offset].strip()]
+        categories["subcategory"] += [line[offset:].strip()]
+    
+    #
+    # 2: Data Type 
+    #
+    dtable = rows[i:]
+    if len(dtable) == 1:
+        return
+    
+    header = re.split("\s{2,}",dtable.pop(0))
+    header = [x for x in re.split("\s{2,}",line) if x]
+    print header
+    ftable = []
+    
+    for line in dtable:
+        line = line.replace("''  :","'':")
+        values = [x for x in re.split("\s{2,}",line) if x]
+        
+        # HACK -- not enough spaces to correctly delimit 
+        # manually split first column
+        if len(values) != len(header):
+            
+            # manually identified case errors
+            terms = ["OARSI","years","only","increase","Very"]
+            if sum([1 for x in terms if x in values[1]]):
+                values = ["%s %s" %(values[0], values[1])] + values[2:]
+            else:
+                m = re.search("\d*[,]*\d+$",values[0])
+                if m:
+                    col = m.group(0)
+                    values[0] = values[0].replace(col,"").strip()
+                    values.insert(1,col)    
+                else:
+                    print "NO MATCH"
+                    print "---------------"
+                    print categories
+                    print header
+                    for X in dtable:
+                        print X
+                    print "---------------" 
+            
+    
+        ftable += [values]
+    
+    # how many fields?
+    print ftable
+
+def is_header_footer(s):
+    return re.search("Page \d+ of \d+",s) or re.search("Release Version",s) or \
+        re.search("Variable Guide",s)
+                
 def load_metadata(filename):
     '''Parse data out of variable description PDF (VG_Variable.pdf) provided 
     by the OAI. File is converted to text using:
@@ -189,9 +263,11 @@ def load_metadata(filename):
     
     for item in pages:
         
-        lines = item.split("\n")
-        lines = [x for x in lines if x.strip()]
-  
+        # create page item
+        # remove garbage lines (i.e., page numbers and footers)
+        lines = item.split("\n")    
+        lines = [x for x in lines if x.strip() and not is_header_footer(x)]
+        
         record = {"id":None, "label":None, "dataset":None, "comments": None}
         record["collection"] = None
         record["category"] = []
@@ -219,6 +295,11 @@ def load_metadata(filename):
             # extract categories and subcategories
             m = regex["category"].search(line)
             if m:
+                
+                table_parser(lines[i:])
+                
+                continue
+                
                 offset = m.group().index("SubCategory")
                 record["cat-span"] = offset
                 reject = ["Cumulative","N"] # reject lines containing this words
@@ -233,7 +314,7 @@ def load_metadata(filename):
                     record["subcategory"] += [lines[j][record["cat-span"]:].strip()]
                     
                 break
-                
+       
         # Fix labels for complete records. Ignore empty records.
         # Categories can be duplicated, so ensure labels are unique.
         if sum([1 if v else 0 for v in record.values()]):
@@ -391,7 +472,6 @@ def sql_insert(data,row_max=1000):
             
             rows = []
 
-    
 def sql_insert_all(data):
     '''
     TODO: This should be done using using an existing database where we use
@@ -426,7 +506,6 @@ def sql_insert_all(data):
         sys.stdout.write("\t(%s)" % row)
      
     sys.stdout.write(";\n")
-    
 
 def create_sql_schema(header,metadata):
     
@@ -449,8 +528,9 @@ def main(args):
     # 1. Category/sub-category information 
     #
     metatdata = load_metadata("../data/VG_Variable_tables.bz2")
-    sql_populate_metadata(metatdata)
+    #sql_populate_metadata(metatdata)
 
+    sys.exit()
     #
     # 2: Create Table Schema
     #    
@@ -528,9 +608,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # argument error, exit
-    if not args.inputdir:
-        parser.print_help()
-        sys.exit()
+    #if not args.inputdir:
+    #    parser.print_help()
+    #    sys.exit()
+    
+    args.inputdir = "/Users/fries/Desktop/data/"
         
     main(args)
     

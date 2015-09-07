@@ -17,6 +17,7 @@ DUA at:
 
 '''
 import sys
+import os
 import getpass
 import argparse
 import urllib2
@@ -62,7 +63,7 @@ httplib.HTTPSConnection = HTTPSConnection
 # ssl_version corrections are done
 # ====================================================================
 
-FILE_URL = "https://oai.epi-ucsf.org/datarelease/DataAgreementCheck.asp?file=%s"
+FILE_URL = "https://oai.epi-ucsf.org/datarelease/DataAgreementCheck.asp?file="
 
 def authenticate(username,password):
     
@@ -96,41 +97,18 @@ def main(args):
     datasets = map(lambda x:x.strip(), open("datasets.txt","rU").readlines())
     datasets = [x for x in datasets if x and x[0] != "#"]
     
-    # get login password
-    args.username = "jfries"
-    pw = "rubbish11" #getpass.getpass()
-   
-    # authenticate
-    browser = mechanize.Browser()
-    cookies = cookielib.LWPCookieJar()
-    browser.set_cookiejar(cookies)
-   
-    browser.set_handle_equiv(True)
-    browser.set_handle_gzip(True)
-    browser.set_handle_redirect(True)
-    browser.set_handle_referer(True)
-    browser.set_handle_robots(False)
-
-    browser.set_handle_refresh(mechanize._http.HTTPRefreshProcessor(), max_time=1)
-    OAI_URL = "https://oai.epi-ucsf.org/datarelease/UserLogonFunction.asp"
-    r = browser.open(OAI_URL)
-
-    # Login using form 
-    browser.select_form(nr=0) # first (only) form on the page
-    browser.form["Username"] = args.username
-    browser.form["Password"] = pw
+    # login
+    pw = getpass.getpass()
+    browser = authenticate(args.username,pw)
     
-    browser.submit()
-    
-    
-    test = "https://oai.epi-ucsf.org/datarelease/DataAgreementCheck.asp?file=AllClinical00_SAS.zip"
-    outfile = "/tmp/" +test.split("file=")[-1]
-    print outfile
-    
-    browser.retrieve(test,outfile)
-    print "DONE"
-    sys.exit()
-    
+    print("Downloading datasets...")
+    for filename in datasets:
+        outfile = "%s%s" % (args.outputdir, filename)
+        url = "%s%s" % (FILE_URL, filename)
+        sys.stdout.write(" (+) %s..." % filename)
+        browser.retrieve(url,outfile)
+        sys.stdout.write("DONE\n")
+        
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
@@ -139,10 +117,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     # argument error, exit
-    #if not args.username:
-    #    parser.print_help()
-    #    sys.exit()
-    
+    if not args.username or not os.path.exists(args.outputdir):
+        parser.print_help()
+        sys.exit()
+        
+    if args.outputdir[-1] != "/":
+        args.outputdir = args.outputdir + "/"
+        
     main(args)
     
 
