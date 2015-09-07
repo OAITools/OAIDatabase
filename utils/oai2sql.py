@@ -158,15 +158,16 @@ def convert_text_file(txt):
                 
                 
 def table_parser(rows):
-    ''' Parse out category and variable types tables
+    ''' Parse out category and variable types tables.
+    More ugly code hacks to pull out metadata.
     '''
     
     #
     # 1: Category table
     #
-    categories ={}
-    categories["category"] = []
-    categories["subcategory"] = []
+    table_data ={}
+    table_data["category"] = []
+    table_data["subcategory"] = []
     
     header = rows.pop(0)
     offset = header.index("SubCategory")
@@ -178,21 +179,31 @@ def table_parser(rows):
         if set(line.split()).intersection(reject) or line[0] == " ":
             break
         
-        categories["category"] += [line[0:offset].strip()]
-        categories["subcategory"] += [line[offset:].strip()]
+        table_data["category"] += [line[0:offset].strip()]
+        table_data["subcategory"] += [line[offset:].strip()]
     
     #
     # 2: Data Type 
     #
     dtable = rows[i:]
-    if len(dtable) == 1:
-        return
     
+    table_data["type"] = "$" #unique
+    table_data["label_n"] = 0
+    table_data["labels"] = None
+    
+    # no info about values -- this means a unique identifier
+    if len(dtable) == 1:
+        return table_data
+   
     header = re.split("\s{2,}",dtable.pop(0))
     header = [x for x in re.split("\s{2,}",line) if x]
-    print header
-    ftable = []
     
+    if set(["Min","Max","Std Dev"]).intersection(header):
+        table_data["type"] = "continuous"
+        table_data["label_n"] = 0
+        return table_data
+    
+    ftable = []
     for line in dtable:
         line = line.replace("''  :","'':")
         values = [x for x in re.split("\s{2,}",line) if x]
@@ -212,19 +223,41 @@ def table_parser(rows):
                     values[0] = values[0].replace(col,"").strip()
                     values.insert(1,col)    
                 else:
-                    print "NO MATCH"
-                    print "---------------"
-                    print categories
-                    print header
-                    for X in dtable:
-                        print X
-                    print "---------------" 
+                    print "FATAL ERROR -- NO MATCH"
+                    sys.exit()
             
-    
+        # variable type
         ftable += [values]
+        # how many fields?
+        labels = [re.match("^(.*):",x[0]) for x in ftable]
+        
+    table_data["type"] = "nominal"
     
-    # how many fields?
-    print ftable
+    # No number, just use all labels as possible classes
+    if None in labels:
+        table_data["label_n"] = len(labels)
+        table_data["labels"] = ",".join([x[0] for x in ftable]) 
+        return table_data
+
+    # create class labels. For simplicities sake we 
+    # don't assume an total ordering on these classes,
+    # though several variables do have ordinal scales. 
+    labels = [x.group(0).replace(":","") for x in labels]
+    labels = [int(x) if x.isdigit() else None for x in labels]
+    
+    if len(labels) == labels.count(None):
+        labels = [re.match("^(.*):",x[0]) for x in ftable]
+        labels = [x.group(0).replace(":","").replace("'","") for x in labels]
+        table_data["labels"] = ",".join(labels)
+        table_data["label_n"] = len(labels)
+    else:
+        labels = {x:1 for x in labels}.keys()
+        table_data["labels"] = ",".join(map(str,labels))
+        table_data["label_n"] = len(labels)
+
+    return table_data
+
+
 
 def is_header_footer(s):
     return re.search("Page \d+ of \d+",s) or re.search("Release Version",s) or \
@@ -296,8 +329,12 @@ def load_metadata(filename):
             m = regex["category"].search(line)
             if m:
                 
-                table_parser(lines[i:])
+                print "ID:",record["id"]
+                table_data = table_parser(lines[i:])
                 
+                for key in table_data:
+                    print key,table_data[key]
+                print "-------------------"
                 continue
                 
                 offset = m.group().index("SubCategory")
@@ -554,7 +591,6 @@ def main(args):
     primary_key_defs["mri"] = []
     primary_key_defs["xray"] = []
     primary_key_defs["mif"] = []
-   
     primary_key_defs["kmri_sq_bicl"] = []
    
     for dir in datadirs:
