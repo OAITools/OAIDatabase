@@ -97,7 +97,10 @@ def main(args):
     datasets = map(lambda x:x.strip(), open("datasets.txt","rU").readlines())
     datasets = [x for x in datasets if x and x[0] != "#"]
     
-    # login
+    # login/password
+    if not args.username:
+        args.username = raw_input("Login: ")
+    
     pw = getpass.getpass()
     browser = authenticate(args.username,pw)
     
@@ -117,7 +120,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     # argument error, exit
-    if not args.username or not os.path.exists(args.outputdir):
+    if not os.path.exists(args.outputdir):
         parser.print_help()
         sys.exit()
         

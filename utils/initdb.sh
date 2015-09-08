@@ -9,12 +9,19 @@
 #
 
 DBNAME="oai";
+DATADIR="/tmp/"
+
+# Make temp download directory
+mkdir $DATADIR/oai-data/
 
 # Download OAI datasets
-# python fetch-data.py
+python fetch-data.py -o $DATADIR/oai-data/
 
 # Create database
 psql -c 'CREATE DATABASE '$DBNAME';'
 
+# Create SQL table schema and data
+python oai2sql.py -i $DATADIR/oai-data/ > $DATADIR/oai-data.sql
+
 # Load table schema and data
-psql -d $DBNAME -f oai-data.sql
+psql -d $DBNAME -f $DATADIR/oai-data.sql

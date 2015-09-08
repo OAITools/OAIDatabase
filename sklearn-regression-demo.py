@@ -13,6 +13,7 @@ import argparse
 import psycopg2
 
 import numpy as np
+import math
 from scipy import stats
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
@@ -25,6 +26,7 @@ from sklearn.cross_validation import train_test_split
 from sklearn.cross_validation import cross_val_score
 from sklearn.metrics import mean_squared_error,r2_score
 from sklearn.learning_curve import learning_curve
+from sklearn.metrics import make_scorer
 
 # By default psycopg2 converts postgresql decimal/numeric types to 
 # Python Decimal objects. This function forces a float type cast instead
@@ -73,7 +75,7 @@ def main(args):
     # simple linear regression we don't really have any hyperparameters to 
     # tune, so we won't create a validation set. Generally, Hastie et al.   
     # suggest Training (50%) Validation (25%) Training (25%) 
-    train,test = train_test_split(results, test_size=0.25)
+    train,test = train_test_split(results, test_size=0.5)
      
     # * the asterisk operator (called the "splat" or "positional expansion" 
     # operator) expands tuples [(1,2),(3,4)] becomes [1,3] and [2,4]
@@ -105,11 +107,17 @@ def main(args):
     plt.scatter(X_test, y_test, color='black')
     plt.plot(X_test, y_pred, color='blue', linewidth=2)
     plt.show()
-    
+
     # ..and let's plot our learning curve
-    train_sizes, train_scores, valid_scores = learning_curve(model, X, y, train_sizes=range(10,1000,10), cv=5)
+    # room mean squared error
+    rms = make_scorer(lambda y_true,y_pred : math.sqrt(mean_squared_error(y_true,y_pred)))
+    train_sizes, train_scores, valid_scores = learning_curve(model, X, y, 
+                                                             train_sizes=range(100,1000,10), cv=5,
+                                                             scoring=rms)
     
-    
+    plt.plot(train_sizes, np.mean(train_scores,1), color='blue', linewidth=1)
+    plt.plot(train_sizes, np.mean(valid_scores,1), color='red', linewidth=1)
+    plt.show()
     
 if __name__ == '__main__':
     
