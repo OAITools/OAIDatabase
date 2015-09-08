@@ -51,6 +51,7 @@ import sas7bdat
 import argparse
 
 PDF2TEXT = "/usr/local/bin/pdftotext"
+ROW_INSERT_MAX = 2000
 
 def psql_esc_str(s):
     return s.replace("'","''")
@@ -155,13 +156,11 @@ def convert_text_file(txt):
             data += [row]
             
     return data
-                
-                
+                           
 def table_parser(rows):
     ''' Parse out category and variable types tables.
     More ugly code hacks to pull out metadata.
     '''
-    
     #
     # 1: Category table
     #
@@ -200,7 +199,7 @@ def table_parser(rows):
     header = [x for x in re.split("\s{2,}",line) if x]
     
     if set(["Min","Max","Std Dev"]).intersection(header):
-        table_data["type"] = "continuous"
+        table_data["type"] = "Continuous"
         table_data["label_n"] = 0
         return table_data
 
@@ -232,7 +231,7 @@ def table_parser(rows):
         if values != ['Value', 'N', '%', 'Cumulative N', 'Cumulative %']:
             ftable += [values]
         
-    table_data["type"] = "nominal"
+    table_data["type"] = "Nominal"
     labels = [re.match("^(.*):",x[0]) for x in ftable]
     
     # class labels are *not* numbered
@@ -243,7 +242,7 @@ def table_parser(rows):
         
     elif None in labels:
         
-        labels = [x.group(0) if x else "" for x in labels]
+        labels = [x.group(0).replace(":","").replace("'","") if x else "" for x in labels]
         table_data["values"] = "|".join(map(str,labels))
         table_data["label_n"] = len(labels)
     
@@ -251,15 +250,13 @@ def table_parser(rows):
         # create class labels. For simplicities sake we 
         # don't assume an total ordering on these classes,
         # though several variables do have ordinal scales. 
-        labels = [x.group(0).replace(":","") for x in labels]
+        labels = [x.group(0).replace(":","").replace("'","") for x in labels]
         labels = [int(x) if x.isdigit() else None for x in labels]
         labels = {x:1 for x in labels}.keys()
         table_data["values"] = "|".join(map(str,labels))
         table_data["label_n"] = len(labels)
         
     return table_data
-
-
 
 def is_header_footer(s):
     return re.search("Page \d+ of \d+",s) or re.search("Release Version",s) or \
@@ -347,30 +344,112 @@ def load_metadata(filename):
     return datdict
 
 metadata_schema = '''
-CREATE TABLE categories (
-        var_id VARCHAR(20) NOT NULL,
-        type INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        PRIMARY KEY(var_id, name, type) );
+CREATE TABLE categorydefs (
+    id SERIAL,
+    type INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY(id) );
 
-CREATE TABLE datasets (
-        var_id VARCHAR(20) NOT NULL,
-        name VARCHAR(128) NOT NULL,
-        collect_form TEXT,
-        comment TEXT,
-        PRIMARY KEY(var_id) );
+CREATE TABLE varcategories (
+    var_id VARCHAR(20) NOT NULL,
+    cat_id INTEGER references categorydefs(id),
+    PRIMARY KEY(var_id, cat_id) );
+        
+CREATE TABLE vardefs (
+    var_id VARCHAR(20) NOT NULL,
+    type VARCHAR(20) NOT NULL,
+    labeln INTEGER,
+    labelset TEXT,
+    datasetname VARCHAR(128),
+    collect_form TEXT,
+    comment TEXT,
+    PRIMARY KEY(var_id) );
 '''        
 
 def sql_populate_metadata(metadata):
-    '''Generate two SQL tables using hand-coded schema from oai.sql
-        1. Category information
-        2. Dataset information
-        
+    '''Generate three SQL tables using hand-coded schema from oai.sql 
     '''
     CATEGORY = 1
     SUBCATEGORY = 2
     
-    cat_schema = "INSERT INTO categories (var_id, type, name) VALUES"
+    catdefs_schema = "INSERT INTO categorydefs (type, name) VALUES"
+    varcats_schema = "INSERT INTO varcategories (var_id, cat_id) VALUES"
+    vardefs_schema = "INSERT INTO vardefs (var_id, type, labeln, labelset, "
+    vardefs_schema += "datasetname, collect_form, comment) VALUES"
+    
+    categories = []
+    varcats = []
+    vardefs = []
+    
+    #
+    # 1. Create category definitions
+    #
+    categorydefs = {CATEGORY:{},SUBCATEGORY:{}}
+    
+    for var_name in metadata:
+        categorydefs[CATEGORY].update( {x:1 for x in metadata[var_name]["category"]} )
+        categorydefs[SUBCATEGORY].update( {x:1 for x in metadata[var_name]["subcategory"]} )
+    
+    idx = 1
+    category_ids = {CATEGORY:{},SUBCATEGORY:{}}
+    for name in sorted(categorydefs[CATEGORY].keys()):
+        category_ids[CATEGORY][name] = idx
+        categories += ["\t(%s, '%s')" % (CATEGORY, psql_esc_str(name))]
+        idx += 1
+    for name in sorted(categorydefs[SUBCATEGORY].keys()):
+        category_ids[SUBCATEGORY][name] = idx
+        categories += ["\t(%s, '%s')" % (SUBCATEGORY, psql_esc_str(name))]
+        idx += 1
+    #
+    # 2. Variable to category mappings
+    #
+    for var_name in metadata:
+        for name in metadata[var_name]["category"]:
+            varcats += ["\t('%s', %s)" % (var_name, category_ids[CATEGORY][name])] 
+        for name in metadata[var_name]["subcategory"]:
+            varcats += ["\t('%s', %s)" % (var_name, category_ids[SUBCATEGORY][name])]
+   
+    #
+    # 3. Vardefs table
+    #
+    for var_name in metadata:
+        
+        # escape single quotes
+        collect = psql_esc_str(metadata[var_name]["collection"])
+        cmmnt = psql_esc_str(metadata[var_name]["comments"])
+        ds = psql_esc_str(metadata[var_name]["dataset"])
+        dtype = metadata[var_name]["type"]
+        label_n = metadata[var_name]["label_n"]
+        values = metadata[var_name]["values"]
+        
+        ds = "'%s'" % ds
+        values = "'%s'" % values
+        collect = "'%s'" % collect
+        cmmnt = "NULL" if cmmnt == "None" else "'%s'" % cmmnt
+        
+        #"var_id, type, labeln, labelset, "
+        #"datasetname, collect_form, comment
+        vardefs += [(var_name, dtype, label_n, values, ds, collect, cmmnt)]
+  
+    vardefs = map(lambda x:"\t('%s', '%s', %s, %s, %s, %s, %s)" % x, vardefs)
+    
+    print metadata_schema
+    print "%s\n%s;" % (catdefs_schema, ",\n".join(categories))
+    print
+    print "%s\n%s;" % (varcats_schema, ",\n".join(varcats))
+    print
+    print "%s\n%s;" % (vardefs_schema, ",\n".join(vardefs))
+
+
+
+
+def sql_populate_metadata_OLD(metadata):
+    '''Generate three SQL tables using hand-coded schema from oai.sql 
+    '''
+    CATEGORY = 1
+    SUBCATEGORY = 2
+    
+    cat_schema = "INSERT INTO vardata (var_id, type, name) VALUES"
     dat_schema = "INSERT INTO datasets (var_id, name, collect_form, comment) VALUES"
     
     categories = []
@@ -406,6 +485,8 @@ def sql_populate_metadata(metadata):
     print "%s\n%s;" % (cat_schema, ",\n".join(categories))
     print
     print "%s\n%s;" % (dat_schema, ",\n".join(datasets))
+    
+
     
 def sql_dataset_schema(tbl_name, sasheader, metadata, pkeys):
     '''
@@ -457,7 +538,7 @@ def sql_dataset_schema(tbl_name, sasheader, metadata, pkeys):
     sys.stdout.write(comment_sql)
     sys.stdout.write("\n\n")
 
-def sql_insert(data,row_max=1000):
+def sql_insert(data,row_max=ROW_INSERT_MAX):
   
     # use SAS header information to get table name and data types
     tbl_name = data.header.properties.name
@@ -548,7 +629,7 @@ def main(args):
     # 1. Category/sub-category information 
     #
     metatdata = load_metadata("../data/VG_Variable_tables.bz2")
-    #sql_populate_metadata(metatdata)
+    sql_populate_metadata(metatdata)
 
     sys.exit()
     #

@@ -10,6 +10,9 @@
 
 DBNAME="oai";
 
+# Download OAI datasets
+# python fetch-data.py
+
 # Create database
 psql -c 'CREATE DATABASE '$DBNAME';'
 
