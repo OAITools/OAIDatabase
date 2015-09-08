@@ -440,54 +440,6 @@ def sql_populate_metadata(metadata):
     print
     print "%s\n%s;" % (vardefs_schema, ",\n".join(vardefs))
 
-
-
-
-def sql_populate_metadata_OLD(metadata):
-    '''Generate three SQL tables using hand-coded schema from oai.sql 
-    '''
-    CATEGORY = 1
-    SUBCATEGORY = 2
-    
-    cat_schema = "INSERT INTO vardata (var_id, type, name) VALUES"
-    dat_schema = "INSERT INTO datasets (var_id, name, collect_form, comment) VALUES"
-    
-    categories = []
-    datasets = []
-    
-    # populate tables
-    for var_name in metadata:
-        
-        for cat in metadata[var_name]["category"]:
-            cat = psql_esc_str(cat)
-            categories += ["\t('%s', %s, '%s')" % (var_name, CATEGORY, cat)]
-        
-        for subcat in metadata[var_name]["subcategory"]:
-            subcat = psql_esc_str(subcat)
-            categories += ["\t('%s', %s, '%s')" % (var_name, SUBCATEGORY, subcat)]
-        
-        
-        # escape single quotes
-        collect = psql_esc_str(metadata[var_name]["collection"])
-        cmmnt = psql_esc_str(metadata[var_name]["comments"])
-        ds = psql_esc_str(metadata[var_name]["dataset"])
-        
-        ds = "'%s'" % ds
-        collect = "'%s'" % collect
-        cmmnt = "NULL" if cmmnt == "None" else "'%s'" % cmmnt
-        datasets += [(var_name, ds, collect, cmmnt)]
-  
-    # sort by dataset
-    datasets = sorted(datasets,key=operator.itemgetter(1),reverse=0)
-    datasets = map(lambda x:"\t('%s', %s, %s, %s)" % x,datasets)
-
-    print metadata_schema
-    print "%s\n%s;" % (cat_schema, ",\n".join(categories))
-    print
-    print "%s\n%s;" % (dat_schema, ",\n".join(datasets))
-    
-
-    
 def sql_dataset_schema(tbl_name, sasheader, metadata, pkeys):
     '''
     '''
@@ -553,11 +505,12 @@ def sql_insert(data,row_max=ROW_INSERT_MAX):
             dtypes = [dtypes[v] for v in row]
             schema = ",".join(row)
             continue
-          
+        
         # escape strings (' and \ characters) and add NULL values to row
-        row = [v if v else "NULL" for v in row]
+        row = [v if v != None else "NULL" for v in row]
         row = [v.replace("'","''").replace("\\","\\\\") if type(v) in [str,unicode] else v 
                for v in row]
+        # set data type
         row = ["%s" % v if dtypes[i]=="number" or v == "NULL" else "'%s'" % v 
                for i,v in enumerate(row)]
         row =",".join(row)
@@ -572,56 +525,16 @@ def sql_insert(data,row_max=ROW_INSERT_MAX):
             sys.stdout.write(";\n")
             
             rows = []
+    
+    # dump remaining rows  
+    if rows:
+        sys.stdout.write("\nINSERT INTO %s (%s) VALUES\n" % (tbl_name,schema))
+        rows = map(lambda x:"\t(%s)" % x, rows)
+        rows = ",\n".join(rows)
+        sys.stdout.write(rows)
+        sys.stdout.write(";\n")
 
-def sql_insert_all(data):
-    '''
-    TODO: This should be done using using an existing database where we use
-    Python to directly insert data instead of using an intermediary SQL text
-    format. 
-    '''
-    # use SAS header information to get table name and data types
-    tbl_name = data.header.properties.name
-    dtypes = {col.name:col.type if col.format !="MMDDYY" else "DATE" 
-              for col in data.header.parent.columns}
-    
-    schema = ""
-    for i,row in enumerate(data):
-        
-        if i == 0:
-            dtypes = [dtypes[v] for v in row]
-            schema = ",".join(row)
-            sys.stdout.write("INSERT INTO %s (%s) VALUES\n" % (tbl_name,schema))
-            continue
-      
-        if i > 1:
-            sys.stdout.write(",\n")
-        
-        # escape strings (' and \ characters) and add NULL values to row
-        row = [v if v else "NULL" for v in row]
-        row = [v.replace("'","''").replace("\\","\\\\") if type(v) in [str,unicode] else v 
-               for v in row]
-        row = ["%s" % v if dtypes[i]=="number" or v == "NULL" else "'%s'" % v 
-               for i,v in enumerate(row)]
-        row =",".join(row)
-        
-        sys.stdout.write("\t(%s)" % row)
-     
-    sys.stdout.write(";\n")
 
-def create_sql_schema(header,metadata):
-    
-    d = {}
-    dtypes = {}
-    dtypes = {"MMDDYY":"DATE","":"NUMERIC"}
-  
-    
-    for i, col in enumerate(header.parent.columns):
-        #print [i, col.name, col.type, col.length, col.format, col.label]
-        col.name = col.name.upper()
-        d[col.name] = {"col":col, "category":[], "subcategory":[]}
-        
-    for name in d:  
-        print name, d[name]["col"].format
     
 def main(args):
     
@@ -631,89 +544,68 @@ def main(args):
     metatdata = load_metadata("../data/VG_Variable_tables.bz2")
     sql_populate_metadata(metatdata)
 
-    sys.exit()
+    filelist = [x for x in os.listdir(args.inputdir) 
+                if os.path.isfile(args.inputdir+x) and ".zip" in x]
+
     #
     # 2: Create Table Schema
     #    
-    datadirs = [x for x in os.listdir(args.inputdir) 
-                if not os.path.isfile(args.inputdir+x)]
-  
-
-    # MIF,X-ray, MRI, and Accelerometry are multiple-rows-per-id 
-    # so we have to manually specify a primary key to uniquely 
-    # identify rows 
     primary_key_defs = {}
-    primary_key_defs["allclinical"] = ["ID"]
-    primary_key_defs["outcomes"] = ["ID"]
-    primary_key_defs["enrollees"] = ["ID"]
-    primary_key_defs["accelerometry"] = ["ID"]
-    primary_key_defs["acceldatabymin"] = ["ID","PAStudyDay","MINSequence"]
+    primary_key_defs['acceldatabymin'] = ["ID","PAStudyDay","MINSequence"]
     primary_key_defs["acceldatabyday"] = ["ID","PAStudyDay","VDAYSequence"]
     
-    # HACK -- remove primary key constraint for multi-record tables
-    # should add unique dummy variable to explicitly declare missing record
-    primary_key_defs["mri"] = []
-    primary_key_defs["xray"] = []
-    primary_key_defs["mif"] = []
-    primary_key_defs["kmri_sq_bicl"] = []
-   
-    for dir in datadirs:
-        indir = "/Users/fries/Desktop/data/%s/*_SAS.zip" % dir
-        filelist = glob.glob(indir)
-      
-        for zfname in filelist:
-            zf = zipfile.ZipFile(zfname, 'r')
-            manifest = sorted(zf.namelist())
-            sasfiles = [x for x in manifest if "sas7bdat" in x]
+    for zfname in filelist:
+        filename = "%s%s" % (args.inputdir,zfname)
+        zf = zipfile.ZipFile(filename, 'r')
+        manifest = sorted(zf.namelist())
+        sasfiles = [x for x in manifest if "sas7bdat" in x]
+        
+        for sasdat in sasfiles:
+            data = zf.read(sasdat)
+            tmpfile = "/tmp/temp.sas7bdat"
             
-            for sasdat in sasfiles:
-                data = zf.read(sasdat)
-                tmpfile = "/tmp/temp.sas7bdat"
-                
-                # dump SAS to a temporary file
-                with open(tmpfile,"wb") as tmp:
-                    tmp.write(data)
-                
-                d = sas7bdat.SAS7BDAT(tmpfile)
-                
-                # get primary key
-                dataset = sasdat.split(".")[0]
-                dataset,version = dataset[0:len(dataset)-2], dataset[-2:]
-                if not version.isdigit():
-                    dataset = dataset + version
-                    version = None
-                    
-                pkeys = map(lambda x: x if x=="ID" else "V"+version+x, 
-                            primary_key_defs[dataset])
-                
-                # SAS metadata (contains label, format)
-                tbl_name = sasdat.split(".")[0]
-                sql_dataset_schema(tbl_name, d.header, metatdata, pkeys)
-                
-                # SAS data: create database INSERT statements
-                #sql_insert(d)
-                #sql_insert_all(d)
+            # dump SAS to a temporary file
+            with open(tmpfile,"wb") as tmp:
+                tmp.write(data)
+            
+            d = sas7bdat.SAS7BDAT(tmpfile)
+          
+            # get primary key
+            dataset = sasdat.split(".")[0]
+            dataset,version = dataset[0:len(dataset)-2], dataset[-2:]
+            
+            #print d.header.properties.name
+            
+            if not version.isdigit():
+                dataset = dataset + version
+                version = None
+            
+            if dataset not in primary_key_defs:
+                primary_key_defs[dataset] = ["ID"]
+            
+            pkeys = map(lambda x: x if x=="ID" else "V"+version+x, 
+                        primary_key_defs[dataset])
+            
+            # SAS metadata (contains label, format)
+            tbl_name = sasdat.split(".")[0]
+            sql_dataset_schema(tbl_name, d.header, metatdata, pkeys)
+            
+            # SAS data: create database INSERT statements
+            sql_insert(d)
 
-                
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     parser.add_argument("-i","--inputdir", type=str, 
                         help="data set input directory")
-    #parser.add_argument("-s","--schema", type=str, 
-    #                    help="data set input directory")
-    #parser.add_argument("-o","--output", type=str, 
-    #                    help="output file path")
-                        
+                   
     args = parser.parse_args()
 
     # argument error, exit
-    #if not args.inputdir:
-    #    parser.print_help()
-    #    sys.exit()
-    
-    args.inputdir = "/Users/fries/Desktop/data/"
-        
+    if not args.inputdir:
+        parser.print_help()
+        sys.exit()
+     
     main(args)
     
 

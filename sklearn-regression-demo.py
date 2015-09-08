@@ -103,33 +103,6 @@ def main(args):
     # ..and let's plot our learning curve
     train_sizes, train_scores, valid_scores = learning_curve(model, X, y, train_sizes=range(10,1000,10), cv=5)
     
-    sys.exit()
-    
-    # We can also manually access the folds of a CV iterator
-    for ktrain, ktest in kf:
-        pass
-    
-    
-    # For regression, sklearn hs several built in measures
-    
-    
-    #
-    # statsmodels visuzliation demo
-    #
-    query = "SELECT V00AGE FROM allclinical00;"
-    cur.execute(query) 
-    age_results = cur.fetchall()
-    age_results = [x[0] for x in age_results]
-    
-    # kernal density estimation
-    kde = sm.nonparametric.KDEUnivariate(age_results)
-    kde.fit()
-    
-    fig = plt.figure(figsize=(12,8))
-    ax = fig.add_subplot(111)
-    ax.hist(age_results, bins=35, normed=True, color='red')
-    ax.plot(kde.support, kde.density, lw=2, color='black');
-    plt.savefig("/users/fries/test.pdf")
     
     
 if __name__ == '__main__':
