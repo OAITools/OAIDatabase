@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 '''
 ---------------------------------------------------
-OAI Database Demo
+Scikit-learn OAI Linear Regression Demo
 ---------------------------------------------------
 
 @author: Jason Alan Fries <jfries [at] stanford.edu>
@@ -26,8 +26,8 @@ from sklearn.cross_validation import cross_val_score
 from sklearn.metrics import mean_squared_error,r2_score
 from sklearn.learning_curve import learning_curve
 
-# By default psycopg2 converts postgresql decimal/numeric types 
-# to Python Decimal objects. This function forces a float type cast instead
+# By default psycopg2 converts postgresql decimal/numeric types to 
+# Python Decimal objects. This function forces a float type cast instead
 DEC2FLOAT = psycopg2.extensions.new_type(
     psycopg2.extensions.DECIMAL.values,
     'DEC2FLOAT',
@@ -57,23 +57,27 @@ def main(args):
     # model WOMAC Pain (V00WOMKPL) as a function of KOOS Pain (V00KOOSKPL)
     # x: KOOS is on a scale of 0..100 where 0 indicates extreme problems
     # y: WOMAC is on a scale of 0..20 where 0 indicates no difficulty
+    #
+    # NOTE: we are removing instances where one or both observations are missing
+    # In a real modeling problem we have to be more mindful of missing values. 
     query = """SELECT V00WOMKPL,V00KOOSKPL FROM allclinical00 
     WHERE V00WOMKPL IS NOT NULL AND V00KOOSKPL IS NOT NULL;"""
     cur.execute(query) 
     results = cur.fetchall()
     
-    # fix a random seed so that our random number generation is deterministic
+    # Fix a random seed so that our random number generation is deterministic
     np.random.seed(123456)
     
     # Pull out a random choice of 25% of data to use as a final test set;
     # we will *not* use this in any way for training our model. For 
     # simple linear regression we don't really have any hyperparameters to 
-    # tune, so we don't create a validation set. Generally, Hastie et al.   
+    # tune, so we won't create a validation set. Generally, Hastie et al.   
     # suggest Training (50%) Validation (25%) Training (25%) 
     train,test = train_test_split(results, test_size=0.25)
-    
-    y,X = zip(*train) 
-    # * the asterisk expands tuples [(1,2),(3,4)] becomes [1,3] and [2,4]
+     
+    # * the asterisk operator (called the "splat" or "positional expansion" 
+    # operator) expands tuples [(1,2),(3,4)] becomes [1,3] and [2,4]
+    y,X = zip(*train)
     X = np.array(X).reshape(-1,1)
     y = np.array(y).reshape(-1,1)
     
@@ -81,11 +85,13 @@ def main(args):
     model = LinearRegression()
     kf = KFold(X.shape[0], n_folds=5) # k-Fold cross-validation iterator. 
     
+    # We can use several different scoring functions here:
+    # r2 (coeffecient of determination), mean absolute error
     scores = cross_val_score(model,X,y,cv=kf,scoring="mean_squared_error")
     print("Mean Training Set Error (MSE): %.2f" % np.mean(scores))
     
-    # Now fit on all our training data and then see how 
-    # well we predict testing set data
+    # Now fit on *all* our training data and then see how 
+    # well we predict test set data
     model.fit(X,y)
     y_test,X_test = zip(*test)
     X_test = np.array(X_test).reshape(-1,1)
@@ -97,7 +103,7 @@ def main(args):
     
     # Let's plot our test data and the corresponding regression fit
     plt.scatter(X_test, y_test, color='black')
-    plt.plot(X_test, y_pred, color='blue',linewidth=2)
+    plt.plot(X_test, y_pred, color='blue', linewidth=2)
     plt.show()
     
     # ..and let's plot our learning curve

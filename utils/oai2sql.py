@@ -51,7 +51,7 @@ import sas7bdat
 import argparse
 
 PDF2TEXT = "/usr/local/bin/pdftotext"
-ROW_INSERT_MAX = 2000
+ROW_INSERT_MAX = 5000
 
 def psql_esc_str(s):
     return s.replace("'","''")
@@ -553,6 +553,18 @@ def main(args):
     primary_key_defs = {}
     primary_key_defs['acceldatabymin'] = ["ID","PAStudyDay","MINSequence"]
     primary_key_defs["acceldatabyday"] = ["ID","PAStudyDay","VDAYSequence"]
+    
+    # tables with no primary keys
+    primary_key_defs["xray"] = []
+    primary_key_defs["mif"] = []
+    primary_key_defs["mri"] = []
+    primary_key_defs["flxr_kneealign_cooke"] = []
+    primary_key_defs["kmri_qcart_eckstein"] = []
+    primary_key_defs["kmri_sq_blksbml_bicl"] = []
+    primary_key_defs["kmri_fnih_sq_moaks_bic"] = []
+    primary_key_defs["kxr_fta_duryea"] = []
+    primary_key_defs["kxr_qjsw_duryea"] = []
+    primary_key_defs["kxr_sq_bu"] = []
     
     for zfname in filelist:
         filename = "%s%s" % (args.inputdir,zfname)
