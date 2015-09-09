@@ -1,0 +1,8 @@
+eclipse.preferences.version=1
+encoding//utils/fetch-data.py=utf-8
+encoding//utils/oai2sql.py=utf-8
+encoding/db-demo.py=utf-8
+encoding/sklearn-classification-demo.py=utf-8
+encoding/sklearn-clustering-demo.py=utf-8
+encoding/sklearn-regression-demo.py=utf-8
+encoding/statsmodels-regression-demo.py=utf-8
