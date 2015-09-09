@@ -70,7 +70,7 @@ def main(args):
     # Fix a random seed so that our random number generation is deterministic
     np.random.seed(123456)
     
-    # Pull out a random choice of 25% of data to use as a final test set;
+    # Pull out a random choice of 50% of data to use as a final test set;
     # we will *not* use this in any way for training our model. For 
     # simple linear regression we don't really have any hyperparameters to 
     # tune, so we won't create a validation set. Generally, Hastie et al.   
@@ -109,7 +109,7 @@ def main(args):
     plt.show()
 
     # ..and let's plot our learning curve
-    # room mean squared error
+    # root mean squared error
     rms = make_scorer(lambda y_true,y_pred : math.sqrt(mean_squared_error(y_true,y_pred)))
     train_sizes, train_scores, valid_scores = learning_curve(model, X, y, 
                                                              train_sizes=range(100,1000,10), cv=5,

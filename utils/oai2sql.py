@@ -130,7 +130,6 @@ def convert_text_file(txt):
             else:
                 mrows[-1] += fields
         
-        
         for x in mrows:
             print x
             id, name, dtype, width = x[:4]
@@ -429,7 +428,7 @@ def sql_populate_metadata(metadata):
         
         #"var_id, type, labeln, labelset, "
         #"datasetname, collect_form, comment
-        vardefs += [(var_name, dtype, label_n, values, ds, collect, cmmnt)]
+        vardefs += [(var_name.lower(), dtype, label_n, values, ds, collect, cmmnt)]
   
     vardefs = map(lambda x:"\t('%s', '%s', %s, %s, %s, %s, %s)" % x, vardefs)
     
@@ -472,16 +471,16 @@ def sql_dataset_schema(tbl_name, sasheader, metadata, pkeys):
     # 2. Label Columns
     #
     sql = []
-    #for var in metadata:
-    for i, col in enumerate(sasheader.parent.columns):
-        var = col.name
-        # only include column defs for this table
-        if var not in metadata:
-            continue
-        
-        label = psql_esc_str(metadata[var]["label"])
-        s = "COMMENT ON column %s.%s is '%s';" % (tbl_name,var,label)
-        sql += [s]
+    if metadata:
+        for i, col in enumerate(sasheader.parent.columns):
+            var = col.name
+            # only include column defs for this table
+            if var not in metadata:
+                continue
+            
+            label = psql_esc_str(metadata[var]["label"])
+            s = "COMMENT ON column %s.%s is '%s';" % (tbl_name,var,label)
+            sql += [s]
     
     comment_sql = "\n".join(sql)
     
@@ -541,9 +540,12 @@ def main(args):
     #
     # 1. Category/sub-category information 
     #
-    metatdata = load_metadata("../data/VG_Variable_tables.bz2")
-    sql_populate_metadata(metatdata)
-
+    if args.metadata:
+        metatdata = load_metadata("../data/VG_Variable_tables.bz2")
+        sql_populate_metadata(metatdata)
+    else:
+        metatdata = {}
+        
     filelist = [x for x in os.listdir(args.inputdir) 
                 if os.path.isfile(args.inputdir+x) and ".zip" in x]
 
@@ -561,10 +563,19 @@ def main(args):
     primary_key_defs["flxr_kneealign_cooke"] = []
     primary_key_defs["kmri_qcart_eckstein"] = []
     primary_key_defs["kmri_sq_blksbml_bicl"] = []
-    primary_key_defs["kmri_fnih_sq_moaks_bic"] = []
+    primary_key_defs["kmri_fnih_sq_moaks_bicl"] = []
     primary_key_defs["kxr_fta_duryea"] = []
     primary_key_defs["kxr_qjsw_duryea"] = []
     primary_key_defs["kxr_sq_bu"] = []
+    
+    # kxr_sq_bu
+    # fnih_joco_demographics
+    # biospec_fnih_joco_assays
+    # clinical_fnih
+    # kmri_fnih_qcart_eckstein
+    
+    # Biospec_FNIH_JoCo_Demographics   LabCorp_Accession_ID
+    # Biospec_FNIH_JoCo_Assays.txt    SpecID
     
     for zfname in filelist:
         filename = "%s%s" % (args.inputdir,zfname)
@@ -610,7 +621,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-i","--inputdir", type=str, 
                         help="data set input directory")
-                   
+    parser.add_argument("-m","--no-metadata", action='store_false', dest="metadata",
+                        help="output metadata schema")            
     args = parser.parse_args()
 
     # argument error, exit
