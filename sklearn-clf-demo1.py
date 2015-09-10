@@ -168,13 +168,12 @@ def main(args):
         query = "SELECT ID,%s FROM %s%s;" % (",".join(ftrs_by_visit[visit_id]),tbl,vid)
         visit_data[vid] = query_db(query)
     
-    ftrs_by_id = {}
     for i in range(0,10):
         vid = ("00%s" % i)[-2:]
-        header = ["id"] + [ x[3:] for x in ftrs_by_visit["v"+vid]]
+        #print vid, len(visit_data[vid])
         
         for row in visit_data[vid]:
-            print zip(header,row)
+            print zip(ftrs_by_visit["v"+vid],row)
     
     
 if __name__ == '__main__':
