@@ -37,12 +37,22 @@ def main(args):
     
     np.random.seed(123456)
     
-    query = "SELECT * FROM allclinical00;"
+    query = "SELECT id,vid,vwomkpl,vwomkpr,vkooskpl,vkooskpr FROM jointsx;"
     con = psycopg2.connect(database=args.dbname, user='') 
     cur = con.cursor()
     cur.execute(query)          
     results = cur.fetchall()
-  
+    
+    pain_scores = {}
+    for row in results:
+        id,row = row[0],row[1:]
+        pain_scores[id] = pain_scores.get(id,[]) + [row]
+    
+    for id in pain_scores:
+        d = sorted(pain_scores[id])
+        for row in d:
+            print row
+    '''
     # Transform our results to a matrix and cluster the resulting points
     # Strip ID and VERSION
     results = [x[2:] for x in results]
@@ -68,12 +78,13 @@ def main(args):
     ax.yaxis.set_major_formatter(NullFormatter())
     plt.axis('tight')
     plt.show()
-
+    '''
+    
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     parser.add_argument("-d","--dbname", type=str, help="OAI database name", 
-                        default="oai")                    
+                        default="oai2")                    
     args = parser.parse_args()
 
     main(args)

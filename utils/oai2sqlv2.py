@@ -6,16 +6,15 @@ Convert Osteoarthritis Initiative (OAI)
 SAS Data to Postgres SQL files
 ---------------------------------------------------
 
-This is an ugly script. OAI data is distributed in flat files and SAS files,
-but it would be more convenient to have a database back-end, representing
-data sets as views.
+This is an *ugly* script. OAI data is distributed in flat files and SAS files,
+but it's more convenient to have a database 
 
 SAS files (sas7bdat files) can be read using the  Python library 
 sas7bdat-2.0.5 which gives us access to column data format and descriptions.
 
 Since metadata like categories and subcategories isn't provided in non-PDF
-form, we convert PDFs to text, then use a script to generate a dictionary
-of metadata
+form (at least that I can find), we convert PDFs to text, then use a script 
+to generate a dictionary of metadata
 
 DEPENDANCES:
 * sas7bdat-2.0.5    https://pypi.python.org/pypi/sas7bdat
@@ -49,10 +48,21 @@ import bz2
 import re
 import sas7bdat
 import argparse
+import logging
 
 PDF2TEXT = "/usr/local/bin/pdftotext"
 ROW_INSERT_MAX = 5000
 TMP_ROOT = "/tmp/"
+
+#logger = logging.getLogger('oai2sqlv2')
+
+
+def norm_col_name(s):
+    '''Normalize sql column name
+    '''
+    #return re.sub("^([VP]+)(\d\d)",r'\1XX',s)
+    #return re.sub("^([VP]+)(\d\d)",r'\1',s)
+    return re.sub("^([V]+)(\d\d)",r'\1',s).lower()
 
 def longest_common_substring(s1, s2):
     m = [[0] * (1 + len(s2)) for i in xrange(1 + len(s1))]
@@ -440,8 +450,6 @@ def sql_populate_metadata(metadata):
         collect = "'%s'" % collect
         cmmnt = "NULL" if cmmnt == "None" else "'%s'" % cmmnt
         
-        #"var_id, type, labeln, labelset, "
-        #"datasetname, collect_form, comment
         vardefs += [(var_name.lower(), dtype, label_n, values, ds, collect, cmmnt)]
   
     vardefs = map(lambda x:"\t('%s', '%s', %s, %s, %s, %s, %s)" % x, vardefs)
@@ -456,7 +464,7 @@ def sql_populate_metadata(metadata):
 def sql_dataset_schema(tbl_name, var_ids, var_fmt, metadata, pkeys):
     '''
     '''
-    dtypes = {"MMDDYY":"DATE","$":"VARCHAR(20)"}
+    dtypes = {"MMDDYY":"DATE","$":"TEXT"}
     notnull = {"ID":1,"VID":1,"VERSION":1}
     
     #
@@ -488,17 +496,18 @@ def sql_dataset_schema(tbl_name, var_ids, var_fmt, metadata, pkeys):
     # 2. Label Columns
     #
     
-    # Normalize labels by collapsing to longest common substring
+    # Normalize labels by collapsing to longest common substring. This isn't
+    # perfect, but we get enough of the gist to be useful.
     var_labels = {}
     for var in metadata:
-        nvar = var[3:]
+        nvar =  norm_col_name(var)
         var_labels[nvar] = var_labels.get(nvar,[]) + [metadata[var]["label"]]
         
     for nvar in var_labels:
+        var_labels[nvar] = [x for x in var_labels[nvar] if x] # remove null strs
         var_labels[nvar] = reduce(longest_common_substring,var_labels[nvar])
         var_labels[nvar] = var_labels[nvar].strip(":").strip(".").strip()
         
-    
     sql = []
     for nvar in var_ids:
         if nvar not in var_labels:
@@ -528,7 +537,9 @@ def sql_insert(data,vid,row_max=ROW_INSERT_MAX):
         if i == 0:
             # strip visit number
             dtypes = [dtypes[v] for v in row]
-            row = [x[3:] if x not in ["ID","VERSION"] else x for x in row ]
+            # normalize variable names
+            row = [norm_col_name(x) if x not in ["ID","VERSION"] else x for x in row ]
+            
             dtypes.insert(1,'number')
             row.insert(1,'VID')
             schema = ",".join(row)
@@ -602,7 +613,7 @@ def main(args):
     tmp = {}
     for filename in filelist:
         prefix = filename.split("/")[-1].split(".")[0]
-        prefix = re.sub("\d+_SAS","",prefix)
+        prefix = re.sub("\d*_SAS","",prefix)
         tmp[prefix] = tmp.get(prefix,[]) + [filename]
         tmp[prefix] = sorted(tmp[prefix])
     filelist = tmp
@@ -626,7 +637,7 @@ def main(args):
             
             # if multiple files, then create a table for each  
             if len(sasfiles) > 1:
-                print "skipping", zipfname
+                #logging.error("skipping %s\n" % zipfname)
                 continue
             
             # dump SAS to a temporary file
@@ -640,7 +651,7 @@ def main(args):
              
             var_ids = [(col.name,col.format) for col in d.header.parent.columns]
             for var,dtype in var_ids:
-                key = var[3:] if var not in ["ID","VERSION"] else var
+                key = norm_col_name(var) if var not in ["ID","VERSION"] else var
                 var_map[key] = var_map.get(key,[]) + [var]
                 var_fmt[key] = var_fmt.get(key,[]) + [dtype]
    
@@ -648,25 +659,31 @@ def main(args):
         for var in var_fmt:
             var_fmt[var] = {key:1 for key in var_fmt[var]}.keys()
             if len(var_fmt[var]) > 1:
-                print "ERROR", var_fmt[var]
+                var_fmt[var] = [x for x in var_fmt[var][0] if x]
+                if not var_fmt[var]:
+                    var_fmt[var] = "string"
+                else:
+                    var_fmt[var] = var_fmt[var][0]
             else:
                 var_fmt[var] = var_fmt[var][0]
         
+        # setup data type formats
         var_fmt["VERSION"] = "string"
+        var_fmt = {key:value if value != "" else "string" for key,value in var_fmt.items()}
         
-        # Merge data sets by visit. Instead of 
-        # JointSx00, JointSx01 ... etc. we create a single table
-        # JointSx and add the field VID (visit id)
         grp = grp.lower()
         if grp not in primary_key_defs:
             primary_key_defs[grp] = ["ID","VID"]
         
         # create table schema
         var_ids = sorted(var_map.keys())
-        var_ids.remove("ID")
-        var_ids.remove("VERSION")
-        var_ids = ["ID","VERSION"] + var_ids
-        
+        if "VERSION" in var_ids:
+            var_ids.remove("VERSION")
+            var_ids = ["VERSION"] + var_ids
+        if "ID" in var_ids: 
+            var_ids.remove("ID")
+            var_ids = ["ID"] + var_ids
+     
         sql_dataset_schema(grp, var_ids, var_fmt, metatdata, primary_key_defs[grp])
         
         # SAS data: create database INSERT statements
@@ -682,14 +699,19 @@ if __name__ == '__main__':
     parser.add_argument("-i","--inputdir", type=str, 
                         help="data set input directory")
     parser.add_argument("-m","--no-metadata", action='store_false', dest="metadata",
-                        help="output metadata schema")            
+                        help="output metadata schema")   
+    parser.add_argument("-l","--no-logging", action='store_false', dest="logging",
+                        help="disable logging")            
     args = parser.parse_args()
 
     # argument error, exit
     if not args.inputdir:
         parser.print_help()
         sys.exit()
-     
+   
+    #if args.logging:
+    #    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+    
     main(args)
     
 

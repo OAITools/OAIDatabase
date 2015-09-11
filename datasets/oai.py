@@ -1,5 +1,15 @@
 import psycopg2
 
+# -------------------------------------------------------------------
+# By default psycopg2 converts postgresql decimal/numeric types to 
+# Python Decimal objects. This code forces a float type cast instead
+DEC2FLOAT = psycopg2.extensions.new_type(
+    psycopg2.extensions.DECIMAL.values,
+    'DEC2FLOAT',
+    lambda value, curs: float(value) if value is not None else None)
+psycopg2.extensions.register_type(DEC2FLOAT)
+# -------------------------------------------------------------------
+
 def get_table_names(dbname):
     
     con = psycopg2.connect(database=dbname, user='') 
