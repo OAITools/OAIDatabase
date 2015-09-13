@@ -1,6 +1,5 @@
 eclipse.preferences.version=1
 encoding//utils/dbimport/createdb.py=utf-8
-encoding//utils/dbimport/populatedb.py=utf-8
 encoding//utils/fetch-data.py=utf-8
 encoding//utils/oai2sql.py=utf-8
 encoding//utils/oai2sqlv2.py=utf-8

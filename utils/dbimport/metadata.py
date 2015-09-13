@@ -3,6 +3,8 @@ import os
 import re
 import sys
 import bz2
+import operator
+from optparse import Values
 
 PDF2TEXT = "/usr/local/bin/pdftotext"
 TMP_ROOT = "/tmp/"
@@ -45,7 +47,12 @@ def longest_common_substring(s1, s2):
     return s1[x_longest - longest: x_longest]
 
 def psql_esc_str(s):
-    return s.replace("'","''")
+    return s.replace("'","''").replace("\\","\\\\")
+
+def norm_col_name(s):
+    '''Normalize sql column name
+    '''
+    return re.sub("^([V]+)(\d\d)",r'\1',s).lower()
 
 def pdf2text(data,layout=True,tmpdir="/tmp"):
     ''' Convert PDF document to plain text file using external pdftotext
@@ -115,7 +122,7 @@ def table_parser(rows):
     header = [x for x in re.split("\s{2,}",line) if x]
     
     if set(["Min","Max","Std Dev"]).intersection(header):
-        table_data["type"] = "Continuous"
+        table_data["type"] = "continuous"
         table_data["label_n"] = 0
         return table_data
 
@@ -147,7 +154,7 @@ def table_parser(rows):
         if values != ['Value', 'N', '%', 'Cumulative N', 'Cumulative %']:
             ftable += [values]
         
-    table_data["type"] = "Nominal"
+    table_data["type"] = "nominal"
     labels = [re.match("^(.*):",x[0]) for x in ftable]
     
     # class labels are *not* numbered
@@ -188,7 +195,7 @@ def sql_populate_metadata(metadata):
     catdefs_schema = "INSERT INTO categorydefs (type, name) VALUES"
     varcats_schema = "INSERT INTO varcategories (var_id, cat_id) VALUES"
     vardefs_schema = "INSERT INTO vardefs (var_id, type, labeln, labelset, "
-    vardefs_schema += "datasetname, collect_form, comment) VALUES"
+    vardefs_schema += "dataset, collect_form, comment) VALUES"
     
     categories = []
     varcats = []
@@ -236,12 +243,12 @@ def sql_populate_metadata(metadata):
         values = metadata[var_name]["values"]
         
         ds = "'%s'" % ds
-        values = "'%s'" % values
         collect = "'%s'" % collect
+        values = "NULL" if values == None else "'%s'" % values
         cmmnt = "NULL" if cmmnt == "None" else "'%s'" % cmmnt
         
         vardefs += [(var_name.lower(), dtype, label_n, values, ds, collect, cmmnt)]
-  
+        
     vardefs = map(lambda x:"\t('%s', '%s', %s, %s, %s, %s, %s)" % x, vardefs)
     
     print metadata_schema 
@@ -332,15 +339,65 @@ def load_metadata(filename):
             datdict[record["id"]] = record
 
     return datdict
+
+def collapse_metadata(metadata):
+    
+    md = {}
+    for var in metadata:
+        normvar = norm_col_name(var)
+        if normvar not in md:
+            md[normvar] = {'type':{},'id':{},'dataset':{},"values":{},"label_n":{}}
+            md[normvar].update({'category':{},'subcategory':{},'collection':{}})
+            md[normvar].update({"values":{},"comments":{},"label":{}})
+        
+        for item in metadata[var]["category"]:
+            md[normvar]["category"][item] = md[normvar]["category"].get(item,0) + 1
+        for item in metadata[var]["subcategory"]:
+            md[normvar]["subcategory"][item] = md[normvar]["subcategory"].get(item,0) + 1
+
+        for key in ["collection","label_n","values","type","comments","dataset"]:
+            field = metadata[var][key]
+            md[normvar][key][field] = md[normvar][key].get(field,0) + 1
+    
+    
+    for normvar in md:
+        
+        md[normvar]["category"] = md[normvar]["category"].keys()
+        md[normvar]["subcategory"] = md[normvar]["subcategory"].keys()
+        md[normvar]["type"] = md[normvar]["type"].keys()[0]
+        md[normvar]["label_n"] = sorted(md[normvar]["label_n"].items(),
+                                        key=operator.itemgetter(1),reverse=1)[0][0]
+        
+        md[normvar]["comments"] = md[normvar]["comments"].keys()[0]
+        md[normvar]["collection"] = md[normvar]["collection"].keys()[0]
+        md[normvar]["dataset"] = [re.sub("\d\d$","",x) for x in md[normvar]["dataset"]][0]
+        
+        for col in ["comments","collection","dataset"]:
+            md[normvar][col] = re.sub("\s{2,}"," ", md[normvar][col])
+        
+        
+        if md[normvar]["label_n"] == 0:
+            md[normvar]["values"] = None
+            continue
+        
+        values = md[normvar]["values"].keys()
+        values = {y:1 for y in reduce(operator.add,[x.split("|") for x in values])}.keys()
+        values = sorted([int(x) if x.isdigit() else x for x in values])
+        
+        md[normvar]["label_n"] = len(values)
+        md[normvar]["values"] = "|".join(map(str,values))
   
   
+    return md
+    
 def main(args):
     
     #
     # 1. Category/sub-category information 
     #
     metatdata = load_metadata("../../data/VG_Variable_tables.bz2")
-    sql_populate_metadata(metatdata)
+    norm_metadata = collapse_metadata(metatdata)
+    sql_populate_metadata(norm_metadata)
         
     
 if __name__ == '__main__':

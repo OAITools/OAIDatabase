@@ -1,27 +1,35 @@
 -- *******************************************************************
 -- Initialize empty OAI database, 
--- http://www.fda.gov/Drugs/InformationOnDrugs/ucm079750.htm
--- @retrieved 2015-28-8
+-- https://oai.epi-ucsf.org/datarelease/
+-- @date 2015-28-8
 -- @author Jason Alan Fries
 -- @email jfries [at] stanford.edu
 -- *******************************************************************
 
 --
--- Variable Categories and Subcategories (Categories): 
+-- Category Definitions
 --
-CREATE TABLE categories (
-		var_id VARCHAR(20) NOT NULL,
-		type INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		PRIMARY KEY(var_id, name, type) );
---	
--- DataSet origin and description (Datasets): 
+CREATE TABLE categorydefs (
+    id SERIAL,
+    type INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY(id) );
+    
 --
-CREATE TABLE datasets (
-		var_id VARCHAR(20) NOT NULL,
-		name VARCHAR(128) NOT NULL,
-		collect_form TEXT,
-		comment TEXT,
-		PRIMARY KEY(var_id) );
-		
+-- Variable-Category Mappings
+--
+CREATE TABLE varcategories (
+    var_id VARCHAR(20) NOT NULL,
+    cat_id INTEGER references categorydefs(id),
+    PRIMARY KEY(var_id, cat_id) );
+        
+CREATE TABLE vardefs (
+    var_id VARCHAR(20) NOT NULL,
+    type VARCHAR(20) NOT NULL,
+    labeln INTEGER,
+    labelset TEXT,
+    dataset VARCHAR(128),
+    collect_form TEXT,
+    comment TEXT,
+    PRIMARY KEY(var_id) );
 		
