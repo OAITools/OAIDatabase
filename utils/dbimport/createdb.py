@@ -9,14 +9,38 @@ import sas7bdat
 import argparse
 import sys
 import operator
+from StdSuites.Table_Suite import rows
 
 TMP_ROOT = "/tmp/"
+ROW_INSERT_MAX = 5000
 
+def psql_esc_str(s):
+    return s.replace("'","''").replace("\\","\\\\")
 
 def norm_col_name(s):
     '''Normalize sql column name
     '''
     return re.sub("^([V]+)(\d\d)",r'\1',s).lower()
+
+def longest_common_substring(s1, s2):
+    m = [[0] * (1 + len(s2)) for i in xrange(1 + len(s1))]
+    longest, x_longest = 0, 0
+    for x in xrange(1, 1 + len(s1)):
+        for y in xrange(1, 1 + len(s2)):
+            if s1[x - 1] == s2[y - 1]:
+                m[x][y] = m[x - 1][y - 1] + 1
+                if m[x][y] > longest:
+                    longest = m[x][y]
+                    x_longest = x
+            else:
+                m[x][y] = 0
+    return s1[x_longest - longest: x_longest]
+
+def norm_col_label(labels):
+    
+    labels = [x for x in labels if x] # remove null strs
+    labels = reduce(longest_common_substring,labels)
+    return labels.strip(":").strip(".").strip()
 
 def group_by_filename(filelist):
     tmp = {}
@@ -27,8 +51,7 @@ def group_by_filename(filelist):
         tmp[prefix] = sorted(tmp[prefix])
     return tmp
 
-
-def create_table_schema(name, vardefs, pkeys):
+def create_table_schema(name, vardefs, varlabels, pkeys):
     
     sql = "CREATE TABLE %s (\n" % name
     columns = []
@@ -53,11 +76,60 @@ def create_table_schema(name, vardefs, pkeys):
         
     sql = sql + "%s);" % ",\n".join(columns)
     
-    return sql
+    comments = []
+    for var in varlabels:
+        label = psql_esc_str(varlabels[var]).decode("utf-8",errors='ignore')
+        s = "COMMENT ON column %s.%s is '%s';" % (name,var,label)
+        comments += [s]
     
+    sql = sql + "\n" + "\n".join(comments) + "\n"
+    
+    return sql
 
+
+
+
+def sql_insert(name, data, sql_types, vid=None, row_max=ROW_INSERT_MAX):
+  
+    # use SAS header information to get table name and data types
+    tbl_name = data.header.properties.name[:-2]
+  
+    header = None
+    dtypes = None
+    rows = []
+    for i,row in enumerate(data):
+        
+        if i == 0:
+            # normalize variable names
+            header = [norm_col_name(x) if x not in ["id","version"] else x for x in row ]
+            dtypes = [sql_types[x] for x in header]
+            if vid != None: 
+                header = ["vid"] + header
+                dtypes = ["NUMERIC"] + dtypes
+            continue
+        
+        if vid != None: 
+            row = [vid] + row
+            
+        # escape strings (' and \ characters) and add NULL values to row
+        row = [v if v != None and v != "" else "NULL" for v in row]
+        
+        row = [psql_esc_str(v) if type(v) in [str,unicode] else v 
+               for v in row]
+        
+        # set data type
+        row = ["%s" % v if type(v) in [float,int] or v == "NULL" else "'%s'" % v 
+               for v in row]
+            
+        rows += [",".join(row)]
+        
+    print "INSERT INTO %s (%s) VALUES\n" % (name,",".join(header))
+    rows = map(lambda x:"\t(%s)" % x, rows)
+    rows = ",\n".join(rows)
+    print "%s;\n\n" % rows
+   
 primary_key_defs = {}
-primary_key_defs["Accelerometry"] = []
+primary_key_defs["Accelerometry"] = ["id"]
 primary_key_defs["Biomarkers"] = ["id","vid"]
 primary_key_defs["JointSx"] = ["id","vid"]
 primary_key_defs["MIF"] = []
@@ -102,7 +174,7 @@ def main(args):
             os.mkdir(tmp_dir)
         
         bdatfmt = {}
-        var_map,var_fmt = {},{}
+        var_map,var_fmt,var_labels = {},{},{}
         
         for i,zipfname in enumerate(filelist[grp]):
             
@@ -110,8 +182,7 @@ def main(args):
             zf = zipfile.ZipFile(filename, 'r')
             manifest = sorted(zf.namelist())
             sasfiles = [x for x in manifest if "sas7bdat" in x]
-            
-            # if multiple files, then create a table for each  
+
             if len(sasfiles) > 1:
                 continue
             
@@ -125,15 +196,17 @@ def main(args):
             d = sas7bdat.SAS7BDAT(tmpfile)
             
             # SAS header format
-            var_ids = [(col.name,col.format) for col in d.header.parent.columns]
-            for var,dtype in var_ids:
+            var_ids = [(col.name,col.format,col.label) for col in d.header.parent.columns]
+            for var,dtype,label in var_ids:
                 key = norm_col_name(var) if var not in ["ID","VERSION"] else var.lower()
                 if key not in var_map:
                     var_map[key] = {}
                     var_fmt[key] = {}
+                    var_labels[key] = []
                 var_map[key][var] = 1
                 var_fmt[key][dtype] = 1
-            
+                var_labels[key] += [label]
+                
             # types actually created by sas2bdat
             header = [norm_col_name(col.name) for col in d.header.parent.columns]
             for idx,row in enumerate(d):
@@ -145,7 +218,12 @@ def main(args):
                     if header[j] not in bdatfmt:
                         bdatfmt[header[j]] = {}
                     bdatfmt[header[j]][t] = bdatfmt[header[j]].get(t,0) + 1
-        
+            
+        # normalize labels
+        for var in var_labels:
+            var_labels[var] = norm_col_label(var_labels[var])
+                
+                
         var_fmt["id"] = var_fmt["version"] = {"$":1}
         
         # assign majority type as column data type
@@ -173,10 +251,23 @@ def main(args):
             sql_types["vid"] = "INTEGER"
         
         pkeys = primary_key_defs[grp] if grp in primary_key_defs else []
-        schema = create_table_schema(grp,sql_types,pkeys) 
+        schema = create_table_schema(grp,sql_types,var_labels,pkeys) 
         
         print schema
         print
+        
+        # only 1 file (don't use VID)
+        if len(filelist[grp]) == 1:
+            tmpfile = "%s%s.sas7bdat" % (tmp_dir,0)
+            data = sas7bdat.SAS7BDAT(tmpfile)
+            sql_insert(grp, data, sql_types, vid=None)
+            continue
+        
+        for i in range(0,len(filelist[grp])):
+            tmpfile = "%s%s.sas7bdat" % (tmp_dir,i)
+            data = sas7bdat.SAS7BDAT(tmpfile)
+            sql_insert(grp, data, sql_types, vid=i)
+                       
         
 
 if __name__ == '__main__':
@@ -195,9 +286,6 @@ if __name__ == '__main__':
         parser.print_help()
         sys.exit()
    
-    #if args.logging:
-    #    logging.basicConfig(stream=sys.stdout, level=logging.INFO)
-    
     main(args)
     
 

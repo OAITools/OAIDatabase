@@ -1,3 +1,12 @@
+import argparse
+import os
+import re
+import sys
+import bz2
+
+PDF2TEXT = "/usr/local/bin/pdftotext"
+TMP_ROOT = "/tmp/"
+
 metadata_schema = '''
 CREATE TABLE categorydefs (
     id SERIAL,
@@ -15,7 +24,7 @@ CREATE TABLE vardefs (
     type VARCHAR(20) NOT NULL,
     labeln INTEGER,
     labelset TEXT,
-    datasetname VARCHAR(128),
+    dataset VARCHAR(128),
     collect_form TEXT,
     comment TEXT,
     PRIMARY KEY(var_id) );
@@ -63,9 +72,7 @@ def pdf2text(data,layout=True,tmpdir="/tmp"):
     os.remove(txtfile)
     
     return txt
-
-def convert_text_file(txt):
-                       
+                   
 def table_parser(rows):
     ''' Parse out category and variable types tables.
     More ugly code hacks to pull out metadata.
@@ -168,7 +175,9 @@ def table_parser(rows):
     return table_data
 
 def is_header_footer(s):
-   
+    return re.search("Page \d+ of \d+",s) or re.search("Release Version",s) or \
+        re.search("Variable Guide",s)
+
 
 def sql_populate_metadata(metadata):
     '''Generate three SQL tables using hand-coded schema from oai.sql 
@@ -241,3 +250,112 @@ def sql_populate_metadata(metadata):
     print ("%s\n%s;" % (varcats_schema, ",\n".join(varcats))).lower()
     print
     print ("%s\n%s;" % (vardefs_schema, ",\n".join(vardefs))).lower()
+    
+
+def load_metadata(filename):
+    '''Parse data out of variable description PDF (VG_Variable.pdf) provided 
+    by the OAI. File is converted to text using:
+    
+    pdftotext -table <INPUT> <OUTPUT>
+    
+    This file gives us category, subcategory, and data set information, which
+    I can't seem to locate as independant data sets on the OAI web site.
+    
+    '''
+    datdict = {}
+    
+    # load text file (compressed or plain text)
+    if filename.split(".")[-1] == "bz2":
+        datfile = bz2.BZ2File(filename,"rb")
+    else:
+        datfile = open(filename,"rU")
+        
+    with datfile:
+        data = datfile.readlines()
+    
+    data = "".join(data)
+    pages = re.split("[_]{2,}",data)
+    
+    regex = {}
+    regex["label"] = re.compile("Label:(.*)")
+    regex["collection"] = re.compile("Data Collection Form:(.+)")
+    regex["dataset"] = re.compile("SAS Dataset:(.+)")
+    regex["comments"] = re.compile("Release Comments:(.+)")
+    regex["category"] = re.compile("Category\s+SubCategory")
+    
+    for item in pages:
+        
+        # create page item
+        # remove garbage lines (i.e., page numbers and footers)
+        lines = item.split("\n")    
+        lines = [x for x in lines if x.strip() and not is_header_footer(x)]
+        
+        record = {"id":None, "label":None, "dataset":None, "comments": None}
+        record["collection"] = None
+        record["category"] = []
+        record["subcategory"] = []
+        
+        for i,line in enumerate(lines):
+            
+            if re.match("\s+",line[0])  and not record["id"]:
+                continue
+            
+            if not record["id"]:
+                record["id"] = line.strip()
+                continue
+            
+            if record["label"] and not record["collection"] and \
+            re.match("\s+",line[0]):
+                record["label"] += line
+                
+            for field in regex:
+                m = regex[field].search(line)
+                if m and field != "category":
+                    record[field] = m.group(1).strip()
+        
+            # extract categories and subcategories
+            m = regex["category"].search(line)
+            if m:
+                
+                table_data = table_parser(lines[i:])
+                record.update(table_data)
+                 
+                break
+       
+        # Fix labels for complete records. Ignore empty records.
+        # Categories can be duplicated, so ensure labels are unique.
+        if sum([1 if v else 0 for v in record.values()]):
+            record["label"] = re.sub("\s{2,}"," ",record["label"])
+            record["comments"] = re.sub("\s{2,}"," ",record["comments"])
+            record["category"] = {x:1 for x in record["category"]}.keys()
+            record["subcategory"] = {x:1 for x in record["subcategory"]}.keys()
+            datdict[record["id"]] = record
+
+    return datdict
+  
+  
+def main(args):
+    
+    #
+    # 1. Category/sub-category information 
+    #
+    metatdata = load_metadata("../../data/VG_Variable_tables.bz2")
+    sql_populate_metadata(metatdata)
+        
+    
+if __name__ == '__main__':
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i","--input", type=str, 
+                        help="metadata input file")
+           
+    args = parser.parse_args()
+
+    # argument error, exit
+    #if not args.input:
+    #    parser.print_help()
+    #   sys.exit()
+   
+
+    main(args)
+

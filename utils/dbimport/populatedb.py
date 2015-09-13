@@ -78,7 +78,7 @@ def create_table_schema(name, vardefs, varlabels, pkeys):
     
     comments = []
     for var in varlabels:
-        label = psql_esc_str(varlabels[var])
+        label = psql_esc_str(varlabels[var]).decode("utf-8",errors='ignore')
         s = "COMMENT ON column %s.%s is '%s';" % (name,var,label)
         comments += [s]
     
@@ -94,7 +94,6 @@ def sql_insert(name, data, sql_types, vid=None, row_max=ROW_INSERT_MAX):
     # use SAS header information to get table name and data types
     tbl_name = data.header.properties.name[:-2]
   
-    print vid
     header = None
     dtypes = None
     rows = []
@@ -105,7 +104,7 @@ def sql_insert(name, data, sql_types, vid=None, row_max=ROW_INSERT_MAX):
             header = [norm_col_name(x) if x not in ["id","version"] else x for x in row ]
             dtypes = [sql_types[x] for x in header]
             if vid != None: 
-                header = ["vid"] + row
+                header = ["vid"] + header
                 dtypes = ["NUMERIC"] + dtypes
             continue
         
@@ -121,34 +120,14 @@ def sql_insert(name, data, sql_types, vid=None, row_max=ROW_INSERT_MAX):
         # set data type
         row = ["%s" % v if type(v) in [float,int] or v == "NULL" else "'%s'" % v 
                for v in row]
-        
-        
-        #dtypes
-        
+            
         rows += [",".join(row)]
         
-        '''
-        #rows += [row]
-        
-        if len(rows) > row_max:
-            
-            sys.stdout.write("\nINSERT INTO %s (%s) VALUES\n" % (tbl_name,schema))
-            rows = map(lambda x:"\t(%s)" % x, rows)
-            rows = ",\n".join(rows)
-            sys.stdout.write(rows)
-            sys.stdout.write(";\n")
-            
-            rows = []
-        '''
-    
     print "INSERT INTO %s (%s) VALUES\n" % (name,",".join(header))
     rows = map(lambda x:"\t(%s)" % x, rows)
     rows = ",\n".join(rows)
-    print rows
-    return
-     
-
-
+    print "%s;\n\n" % rows
+   
 primary_key_defs = {}
 primary_key_defs["Accelerometry"] = ["id"]
 primary_key_defs["Biomarkers"] = ["id","vid"]
@@ -277,11 +256,16 @@ def main(args):
         print schema
         print
         
-        for i in range(0,len(filelist[grp])):
+        # only 1 file (don't use VID)
+        if len(filelist[grp]) == 1:
+            tmpfile = "%s%s.sas7bdat" % (tmp_dir,0)
+            data = sas7bdat.SAS7BDAT(tmpfile)
+            sql_insert(grp, data, sql_types, vid=None)
+            continue
         
+        for i in range(0,len(filelist[grp])):
             tmpfile = "%s%s.sas7bdat" % (tmp_dir,i)
             data = sas7bdat.SAS7BDAT(tmpfile)
-            
             sql_insert(grp, data, sql_types, vid=i)
                        
         
