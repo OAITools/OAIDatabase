@@ -21,7 +21,7 @@ python fetch-data.py -o $DATADIR/oai-data/
 psql -c 'CREATE DATABASE '$DBNAME';'
 
 # Create SQL table schema and data
-python oai2sql.py -i $DATADIR/oai-data/ > $DATADIR/oai-data.sql
+python dbimport/dbcreate.py -i $DATADIR/oai-data/ > $DATADIR/oai-data.sql
 
 # Load table schema and data
 psql -d $DBNAME -f $DATADIR/oai-data.sql

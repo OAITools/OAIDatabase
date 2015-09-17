@@ -24,7 +24,6 @@ from matplotlib.ticker import NullFormatter
 from sklearn import manifold, datasets
 from sklearn.decomposition import PCA
 
-
 # By default psycopg2 converts postgresql decimal/numeric types to 
 # Python Decimal objects. This function forces a float type cast instead
 DEC2FLOAT = psycopg2.extensions.new_type(
@@ -33,16 +32,55 @@ DEC2FLOAT = psycopg2.extensions.new_type(
     lambda value, curs: float(value) if value is not None else None)
 psycopg2.extensions.register_type(DEC2FLOAT)
 
+
 def main(args):
     
     np.random.seed(123456)
-    
-    query = "SELECT id,vid,vwomkpl,vwomkpr,vkooskpl,vkooskpr FROM jointsx;"
     con = psycopg2.connect(database=args.dbname, user='') 
     cur = con.cursor()
+    
+    # Select all features related to WOMAC/KOOS pain subcategories
+    ftr_cats = ["womac pain","koos pain"]
+    
+    query = "SELECT var_id FROM varcategories WHERE varcategories.cat_id IN "
+    query += "(SELECT id FROM categorydefs WHERE name in (%s) AND type=2);"
+    query = query % ",".join(map(lambda x:"'%s'" % x,ftr_cats))
     cur.execute(query)          
+    results = [x[0] for x in cur.fetchall()]
+    
+    # get variable types (nominal or continuous)
+    query = "SELECT var_id,type,labeln FROM vardefs WHERE var_id in (%s);"
+    query = query % ",".join(map(lambda x:"'%s'" % x,results))
+    cur.execute(query)  
     results = cur.fetchall()
     
+    # sort by data type
+    dtype = {}
+    dtype["nominal"] = {var:labeln for var,t,labeln in results if t == "nominal"}
+    dtype["continuous"] = {var:labeln for var,t,labeln in results if t == "continuous"}
+    
+    # determine table for fields
+    '''
+    query = "SELECT var_id,dataset FROM vardefs WHERE var_id in (%s);"
+    query = query % ",".join(map(lambda x:"'%s'" % x, dtype["continuous"].keys()))
+    cur.execute(query)  
+    results = cur.fetchall()
+    tables = {var:tbl for var,tbl in results}
+    tables = {x:1 for x in tables.values()}.keys()
+    '''
+    
+    # cluster by pain progression
+    vars = ["id",'vid'] + dtype["continuous"].keys()
+    query = "SELECT %s FROM jointsx ORDER BY id,vid;" % ",".join(vars)
+    
+    # KOOS and WOMAC pain scores measure the same thing (essentially)
+    
+    # create a numpy tensor (4x9x4)
+    # normalize to 0..1 (and invert KOOS)
+    
+    
+    
+    '''
     pain_scores = {}
     for row in results:
         id,row = row[0],row[1:]
@@ -52,6 +90,7 @@ def main(args):
         d = sorted(pain_scores[id])
         for row in d:
             print row
+    '''
     '''
     # Transform our results to a matrix and cluster the resulting points
     # Strip ID and VERSION

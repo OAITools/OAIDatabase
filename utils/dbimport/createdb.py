@@ -86,9 +86,6 @@ def create_table_schema(name, vardefs, varlabels, pkeys):
     
     return sql
 
-
-
-
 def sql_insert(name, data, sql_types, vid=None, row_max=ROW_INSERT_MAX):
   
     # use SAS header information to get table name and data types
@@ -128,9 +125,76 @@ def sql_insert(name, data, sql_types, vid=None, row_max=ROW_INSERT_MAX):
     rows = ",\n".join(rows)
     print "%s;\n\n" % rows
    
+def enrollees_sql_insert(name, data, sql_types):
+    '''Enrollees data is collapsed into 1 data set (rather than split by visit).
+    This creates up to 8 rows per subjects, uniqiuely identified by ID,VID
+    '''
+    header,normheader,insert_header = None,None,None
+
+    rows = []
+    
+    for i,row in enumerate(data):
+        
+        if i == 0:
+            # normalize variable names
+            header = row
+            normheader = [norm_col_name(x) if x not in ["id","version"] else x for x in row]
+            tmp = sorted({x:1 for x in normheader if x not in ["id","version"]}.keys())
+            insert_header = ["id","vid","version"] + tmp
+            
+            continue
+  
+        fields = dict(zip(map(lambda x:x.lower(),header),row))
+        vids = map(lambda x:int(x) if x.isdigit() else 0,[x[1:3] for x in header if x[0]!="v"])
+        vids = {v:1 for v in vids}
+        
+        for vid in vids:
+            subrow = []
+            vidprefix = "V" + ("0" + str(vid))[-2:]
+        
+            
+            for var in insert_header:
+              
+                unvar = (vidprefix + var[1:]).lower()
+                
+                if var in fields:
+                  
+                    subrow += [fields[var]]
+                elif unvar in fields:
+            
+                    subrow += [fields[unvar]]
+                else:
+                    subrow += [None]
+            
+            subrow[1] = vid
+            rows += [subrow]
+        
+        
+    # normalize sql statements
+    for i,row in enumerate(rows):
+        
+        # escape strings (' and \ characters) and add NULL values to row
+        row = [v if v != None and v != "" else "NULL" for v in row]
+        
+        row = [psql_esc_str(v) if type(v) in [str,unicode] else v 
+               for v in row]
+        
+        # set data type
+        row = ["%s" % v if type(v) in [float,int] or v == "NULL" else "'%s'" % v 
+               for v in row]
+        
+        rows[i] = ",".join(row)
+ 
+    print "INSERT INTO %s (%s) VALUES\n" % (name,",".join(insert_header))
+    rows = map(lambda x:"\t(%s)" % x, rows)
+    rows = ",\n".join(rows)
+    print "%s;\n\n" % rows
+
+
 primary_key_defs = {}
 primary_key_defs["Accelerometry"] = ["id"]
 primary_key_defs["Biomarkers"] = ["id","vid"]
+primary_key_defs["Enrollees"] = ["id","vid"]
 primary_key_defs["JointSx"] = ["id","vid"]
 primary_key_defs["MIF"] = []
 primary_key_defs["MRI"] = []
@@ -165,7 +229,7 @@ def main(args):
     for grp in filelist:
         
         # skip these data sets as they require special handing
-        if grp in ["AllClinical","AccelData","Enrollees"]:
+        if grp in ["AllClinical","AccelData"]:
             continue
         
         # create tmp directory for 
@@ -187,8 +251,7 @@ def main(args):
                 continue
             
             # dump SAS to a temporary file
-            sasfile = sasfiles[0]
-            data = zf.read(sasfile)
+            data = zf.read(sasfiles[0])
             tmpfile = "%s%s.sas7bdat" % (tmp_dir,i)
             with open(tmpfile,"wb") as tmp:
                 tmp.write(data)
@@ -255,6 +318,12 @@ def main(args):
         
         print schema
         print
+        
+        if grp == "Enrollees":
+            tmpfile = "%s%s.sas7bdat" % (tmp_dir,0)
+            data = sas7bdat.SAS7BDAT(tmpfile)
+            enrollees_sql_insert(grp, data, sql_types)
+            continue
         
         # only 1 file (don't use VID)
         if len(filelist[grp]) == 1:
