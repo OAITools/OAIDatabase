@@ -31,6 +31,15 @@ from sklearn.learning_curve import learning_curve
 from sklearn.metrics import make_scorer
 from sklearn.preprocessing import OneHotEncoder
 
+'''
+    query = "SELECT var_id,dataset FROM vardefs WHERE var_id in (%s);"
+    query = query % ",".join(map(lambda x:"'%s'" % x, dtype["continuous"].keys()))
+    cur.execute(query)  
+    results = cur.fetchall()
+    tables = {var:tbl for var,tbl in results}
+    tables = {x:1 for x in tables.values()}.keys()
+    '''
+'''
 
 
 def main(args):
