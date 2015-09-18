@@ -33,6 +33,29 @@ DEC2FLOAT = psycopg2.extensions.new_type(
 psycopg2.extensions.register_type(DEC2FLOAT)
 
 
+def interpolate(v):
+    '''Interpolate missing values in column. Compute the mean 
+    of the nearest pre and post observation values. 
+    NOTE: We could also use the mean, some sort of exponential
+    smoothing, etc. here if we like
+    '''
+    for j in range(0,v.shape[1]):
+        
+        row = v[...,j]    
+        for i in range(1,len(row)-1):
+            if not np.isnan(row[i]):
+                continue
+            a = row[i-1]
+            b = row[i+1]
+            k = i + 1
+            
+            while np.isnan(b) and k < len(row)-1:
+                k += 1
+                b = row[k]
+            row[i] = (a+b)/2.0
+        v[...,j] = row
+    
+        
 def main(args):
     
     np.random.seed(123456)
@@ -58,7 +81,7 @@ def main(args):
     dtype = {}
     dtype["nominal"] = {var:labeln for var,t,labeln in results if t == "nominal"}
     dtype["continuous"] = {var:labeln for var,t,labeln in results if t == "continuous"}
-    
+   
     # determine table for fields
     '''
     query = "SELECT var_id,dataset FROM vardefs WHERE var_id in (%s);"
@@ -69,14 +92,52 @@ def main(args):
     tables = {x:1 for x in tables.values()}.keys()
     '''
     
-    # cluster by pain progression
-    vars = ["id",'vid'] + dtype["continuous"].keys()
+    # KOOS and WOMAC pain scores measure similar things (essentially)
+    vars = ["id",'vid'] + sorted(dtype["continuous"].keys())
     query = "SELECT %s FROM jointsx ORDER BY id,vid;" % ",".join(vars)
+    cur.execute(query)  
+    results = cur.fetchall()
     
-    # KOOS and WOMAC pain scores measure the same thing (essentially)
-    
-    # create a numpy tensor (4x9x4)
     # normalize to 0..1 (and invert KOOS)
+    # cluster by pain progression
+    subjects = {}
+    for row in results:
+        id,row = row[0],row[1:]
+        subjects[id] = subjects.get(id,[]) + [row]
+        
+    # create a numpy tensor (4796, 10, 4)
+    X = []
+    MIN_NAN_THRESHOLD  = 0.5
+    func = np.vectorize(interpolate)
+    
+    for id in subjects:
+        m = np.empty((10,4),dtype=np.float64)
+        m.fill(np.nan)
+        
+        #vid, kooskpl, kooskpr, womkpl, womkpr = row
+        for row in subjects[id]:
+            vid,tmp = row[0],row[1:]
+            m[vid] = tmp
+            
+        n = np.count_nonzero(~np.isnan(m))
+        if n/40.0 < MIN_NAN_THRESHOLD:
+            continue
+        
+        # interpolate missing values
+        interpolate(m)
+        
+        X += [m]
+           
+    X = np.array(X)
+    print X.shape
+    
+    # invert KOOS scale
+    # 0 no problems  1: extreme problems
+    X[...,...,0:2] = 100 - X[...,...,0:2]
+    
+    # Standardize to 0..1 range
+    X[...,...,0:2] /= 100
+    X[...,...,2:] /= 20
     
     
     
