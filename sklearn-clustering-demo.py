@@ -122,8 +122,6 @@ def main(args):
         
         # interpolate missing values
         interpolate(m)
-        
-        
         X += [m]
            
     X = np.array(X)
@@ -143,7 +141,7 @@ def main(args):
     for i in range(0,X.shape[0]):
         koos =  X[i][...,0] + X[i][...,1]
         womac = X[i][...,2] + X[i][...,3]
-        x = (koos + womac) / 2.0
+        x = koos #(koos + womac) / 2.0
         
         # replace NaN with the mean for this row
         # REMOVE FOR NOW
@@ -157,7 +155,7 @@ def main(args):
     pain = np.array(pain)  
  
     # cluster using SpectralClustering
-    k = 5
+    k = 8
     clstr = SpectralClustering(n_clusters=k) 
     clstr.fit(pain)   
        

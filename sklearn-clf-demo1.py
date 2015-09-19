@@ -38,7 +38,6 @@ from sklearn.preprocessing import OneHotEncoder
     results = cur.fetchall()
     tables = {var:tbl for var,tbl in results}
     tables = {x:1 for x in tables.values()}.keys()
-    '''
 '''
 
 
@@ -52,9 +51,31 @@ def main(args):
     # Q: Will subject will undergo a R or L TKA 
     #    by their next OAI visit?
  
+    # Identify our subjects (anyone with a R or L TKA)
+    con = psycopg2.connect(database="oai2", user='') 
+    cur = con.cursor()
+    query = "SELECT id,verkfldt,velkfldt FROM outcomes;"
+    cur.execute(query)
+    results = cur.fetchall()
+
+    # 342/4552 Subjects: 203 Right, 210 Left, 71 R+L
+    subjects = {id:[rtka,ltka] for id,rtka,ltka in results 
+                if rtka != None or ltka != None }
+    print len(subjects)
+    # Visit Dates
+    visit_defs = {0:0, 1:12, 2:18 ,3:24, 4:30, 5:36, 6:48, 7:60, 8:72, 9:84}
+    
+    ids = ["'%s'" % id for id in subjects]
+    query = "SELECT ID,V99ELKVSPR,V99ELKVSAF,V99ERKVSPR,V99ERKVSAF "
+    query += "FROM outcomes99 WHERE ID in (%s);"
+    query = query % ",".join(ids)
+    cur.execute(query) 
+    results = cur.fetchall()
+ 
+ 
     # Load Data Set 
-    X = datasets.oai.tka_demo
-    y = []
+    #X = datasets.oai.tka_demo
+    #y = []
     
     
     
