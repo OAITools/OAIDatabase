@@ -1,6 +1,8 @@
 #!/bin/sh
 # 
 # Create OAI Database (OSX/Linux)
+# Script assumes file are provided in a folder named OAI under
+# the $DATADIR path or downloaded by the script directly.
 #
 # @author	Jason Alan Fries 
 # @email 	jason-fries [at] stanford [dot] edu
@@ -8,20 +10,23 @@
 # USAGE: initdb.sh
 #
 
-DBNAME="oai";
+DBNAME="oai3";
 DATADIR="/tmp/"
 
-# Make temp download directory
-mkdir $DATADIR/oai-data/
+if [ "$1" == "-d" ]; then
+	# Make temp download directory
+	mkdir $DATADIR/OAI/
 
-# Download OAI datasets
-python fetch-data.py -o $DATADIR/oai-data/
+	# Download OAI datasets
+	python fetch-data.py -o $DATADIR/OAI/
+fi
 
 # Create database
-psql -c 'CREATE DATABASE '$DBNAME';'
+psql -c 'DROP DATABASE IF EXISTS '$DBNAME';CREATE DATABASE '$DBNAME';'
 
 # Create SQL table schema and data
-python dbimport/dbcreate.py -i $DATADIR/oai-data/ > $DATADIR/oai-data.sql
+python dbimport/metadata.py > $DATADIR/oai-data.sql -i ../data/VG_Variable_tables.bz2
+python dbimport/createdb.py -i $DATADIR/OAI/ >> $DATADIR/oai-data.sql
 
 # Load table schema and data
 psql -d $DBNAME -f $DATADIR/oai-data.sql

@@ -395,24 +395,17 @@ def main(args):
     #
     # 1. Category/sub-category information 
     #
-    metatdata = load_metadata("../../data/VG_Variable_tables.bz2")
+    metatdata = load_metadata(args.infile)
     norm_metadata = collapse_metadata(metatdata)
     sql_populate_metadata(norm_metadata)
-        
-    
+         
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("-i","--input", type=str, 
-                        help="metadata input file")
+    parser.add_argument("-i","--infile", type=str, help="metadata input file",
+                        default="../../data/VG_Variable_tables.bz2")
            
     args = parser.parse_args()
-
-    # argument error, exit
-    #if not args.input:
-    #    parser.print_help()
-    #   sys.exit()
-   
 
     main(args)
 
