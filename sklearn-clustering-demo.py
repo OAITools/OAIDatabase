@@ -58,10 +58,6 @@ def main(args):
     dtype["nominal"] = {var:labeln for var,t,labeln in results if t == "nominal"}
     dtype["continuous"] = {var:labeln for var,t,labeln in results if t == "continuous"}
     
-    print dtype["nominal"]
-    print dtype["continuous"]
-    sys.exit()
-    
     # KOOS and WOMAC pain scores measure similar things (essentially)
     vars = ["id",'vid'] + sorted(dtype["continuous"].keys())
     query = "SELECT %s FROM jointsx ORDER BY id,vid;" % ",".join(vars)
@@ -141,7 +137,7 @@ def main(args):
                 continue
             plt.plot(range(0,10), pain[j], color='blue', linewidth=0.1)
         
-        plt.savefig("/users/fries/desktop/kmeans/%s.pdf" % i)
+        plt.savefig("%s/%s.pdf" % (args.outputdir,i))
         plt.clf()
     
      
@@ -151,6 +147,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-d","--dbname", type=str, help="OAI database name", 
                         default="oai2")                    
+    parser.add_argument("-o","--outputdir", type=str, 
+                        help="output directory for plots", default="/tmp/")   
     args = parser.parse_args()
 
     main(args)

@@ -27,6 +27,36 @@ def get_table_names(dbname=DBNAME):
     return results
 
 
+def get_category_vars(ftr_cats):
+    '''
+    '''
+    con = psycopg2.connect(database=DBNAME, user='') 
+    cur = con.cursor()
+    
+    query = """SELECT DISTINCT var_id FROM varcategories
+            WHERE varcategories.cat_id 
+            IN (SELECT id FROM categorydefs WHERE name in (%s));"""
+    
+    query = query % ",".join(map(lambda x:"'%s'" % x,ftr_cats))
+    cur.execute(query)          
+    results = [x[0] for x in cur.fetchall()]
+    
+    # get variable types (nominal or continuous)
+    query = "SELECT var_id,type,labeln,dataset FROM vardefs WHERE var_id in (%s);"
+    query = query % ",".join(map(lambda x:"'%s'" % x,results))
+    cur.execute(query)  
+    results = cur.fetchall()
+    
+    # sort by data type
+    dtype = {}
+    dtype["nominal"] = {var:(labeln,dataset) for var,t,labeln,dataset 
+                        in results if t == "nominal"}
+    dtype["continuous"] = {var:(labeln,dataset) for var,t,labeln,dataset 
+                           in results if t == "continuous"}
+    
+    return dtype
+    
+
 def get_var_description(table_name,var_id):
     '''Ugly SQL for fetching table var comments. Found on
     http://www.postgresonline.com/journal/archives/215-Querying-table,-view,-column-and-function-descriptions.html
@@ -88,7 +118,6 @@ class FeatureBuilder(object):
         self.cur.execute("SELECT DISTINCT(id) FROM jointsx;")
         results = sorted([int(x[0]) for x in self.cur.fetchall()])
         self.row_names = map(str,results)
-        
     
     def get_feature(self,table,var_id,force_continuous=False):
         
@@ -97,7 +126,7 @@ class FeatureBuilder(object):
         query = query % ",".join(map(lambda x:"'%s'" % x,[var_id]))
         self.cur.execute(query)
         results = self.cur.fetchall()
-        print results
+        
         assert len(results) > 0  
 
         # query data
@@ -112,11 +141,13 @@ class FeatureBuilder(object):
             sid,row = row[0],row[1:]
             subjects[sid] = subjects.get(sid,[]) + [row]
         
-        # create continuous variable tensor
+        #
+        # CASE 1: continuous variable
+        #
         X = []
         if var_type == 'continuous' or force_continuous:
             
-            for sid in subjects:
+            for sid in self.row_names:
                 m = np.empty((10,1),dtype=np.float64)
                 m.fill(np.nan)
             
@@ -127,15 +158,17 @@ class FeatureBuilder(object):
                 X += [m]
             
             X = np.array(X)
-                
-        # nomimal
+            
+        #
+        # CASE 1: nominal variable
+        #
         else:
             # category variable domain
             domain = [int(x) for x in labelset.split("|") if x!= "none"]
             null_id = max(domain) + 1
             enc = OneHotEncoder(n_values=null_id+1)
             
-            for sid in subjects:
+            for sid in self.row_names:
                 m = np.empty((10,1),dtype=np.int8)
                 # fill out empty matrix with the default label for None
                 m.fill(null_id)
@@ -149,18 +182,26 @@ class FeatureBuilder(object):
                 X += [m]
             
             X = np.array(X)
-         
+            
+            
             Xt = []
             for j in range(0,X.shape[1]):
                 x = X[...,j,...]
                 x = enc.fit_transform(x).toarray()
                 Xt += [x]
-                print "*",x.shape
+               
+            X = np.concatenate(Xt).reshape((4796, 10, -1),order='F').astype(np.int8)
             
-            X = np.array(Xt)
-            
-           
+        '''
         print X.shape
+        for i in range(0,10):
+            test = X[i,...,...]
+            print self.row_names[i],test.shape
+            print test
+        '''
+            
+            
+            
         return X
         
     

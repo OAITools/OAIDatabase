@@ -5,6 +5,8 @@
 Scikit-learn OAI Linear Regression Demo
 ---------------------------------------------------
 
+**** WORK IN PROGRESS **** 
+
 @author: Jason Alan Fries <jfries [at] stanford.edu>
 
 '''
