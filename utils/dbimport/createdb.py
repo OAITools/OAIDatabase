@@ -9,7 +9,6 @@ import sas7bdat
 import argparse
 import sys
 import operator
-from StdSuites.Table_Suite import rows
 
 TMP_ROOT = "/tmp/"
 ROW_INSERT_MAX = 5000

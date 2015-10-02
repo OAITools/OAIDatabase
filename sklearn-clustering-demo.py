@@ -35,6 +35,9 @@ psycopg2.extensions.register_type(DEC2FLOAT)
 
 
 def ses( v, idx, alpha=0.1 ) :
+    '''Simple Exponential Smoothing: Recursively smooth series data
+    
+    '''
     if idx == 0:
         return
     ses(v, idx-1, alpha );
@@ -44,8 +47,9 @@ def ses( v, idx, alpha=0.1 ) :
 def interpolate(v):
     '''Interpolate missing values in column. Compute the mean 
     of the nearest pre and post observation values. 
-    NOTE: We could also use the mean, some sort of exponential
-    smoothing, etc. here if we like
+    NOTE: We could also use the mean of all obs,  exponential
+    smoothing, etc. here if we like. 
+    
     '''
     for j in range(0,v.shape[1]):
         
@@ -90,6 +94,10 @@ def main(args):
     dtype["nominal"] = {var:labeln for var,t,labeln in results if t == "nominal"}
     dtype["continuous"] = {var:labeln for var,t,labeln in results if t == "continuous"}
     
+    print dtype["nominal"]
+    print dtype["continuous"]
+    sys.exit()
+    
     # KOOS and WOMAC pain scores measure similar things (essentially)
     vars = ["id",'vid'] + sorted(dtype["continuous"].keys())
     query = "SELECT %s FROM jointsx ORDER BY id,vid;" % ",".join(vars)
@@ -104,7 +112,7 @@ def main(args):
         
     # create a numpy tensor of pain data (4796, 10, 4)
     X = []
-    MIN_NAN_THRESHOLD  = 0.5
+    MIN_NAN_THRESHOLD  = 0.5 # must contain < 50% null obs (NaN)
     func = np.vectorize(interpolate)
     
     for id in subjects:
@@ -135,24 +143,24 @@ def main(args):
     X[...,...,2:] /= 20
     
     # for each subject, create a pain progression time series
-    # calculated as the max of the sum of R+L KOOS/WOMAC scores
-    repl_n = 0
+    # calculated as the sum of R+L KOOS/WOMAC scores
     pain = [] #np.empty((X.shape[0],X.shape[1]))
     for i in range(0,X.shape[0]):
         koos =  X[i][...,0] + X[i][...,1]
         womac = X[i][...,2] + X[i][...,3]
-        x = koos #(koos + womac) / 2.0
+        x = (koos + womac) / 2.0
         
-        # replace NaN with the mean for this row
-        # REMOVE FOR NOW
+        # HACK: remove any rows containing a NaN (for now)
         if np.count_nonzero(~np.isnan(x)) != 10:
             continue
-            repl_n += 1
+            # replace NaN with the mean for this row
             x[np.isnan(x)] = np.nanmean(x)
          
         pain += [x]
         
     pain = np.array(pain)  
+ 
+    
  
     # cluster using SpectralClustering
     k = 8
@@ -172,30 +180,6 @@ def main(args):
         plt.savefig("/users/fries/desktop/kmeans/%s.pdf" % i)
         plt.clf()
     
-    sys.exit()
-    
-    '''
-    # Principle Components Analysis
-    pca = PCA(n_components=2)
-    px  = pca.fit_transform(pain)
-    print(pca.explained_variance_ratio_) 
-    
-    plt.scatter(px[:, 0], px[:, 1])
-    plt.show()
-    sys.exit()
-    '''
-    
-    '''
-    # Stochastic Neighbor Embedding
-    tsne = TSNE(n_components=2, random_state=0, init='pca')
-    y = tsne.fit_transform(pain)
-    
-    plt.scatter(y[:, 0], y[:, 1])
-    ax.xaxis.set_major_formatter(NullFormatter())   
-    ax.yaxis.set_major_formatter(NullFormatter())
-    plt.axis('tight')
-    plt.show()
-    '''
      
     
 if __name__ == '__main__':
