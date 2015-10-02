@@ -17,16 +17,16 @@ Biospec_FNIH_LabCorp_SAS.zip
 # -----------------------------
 # Clinical Data Sets
 # -----------------------------
-AllClinical00_SAS.zip
-AllClinical01_SAS.zip
-AllClinical02_SAS.zip
-AllClinical03_SAS.zip
-AllClinical04_SAS.zip
-AllClinical05_SAS.zip
-AllClinical06_SAS.zip
-AllClinical07_SAS.zip
-AllClinical08_SAS.zip
-AllClinical09_SAS.zip
+#AllClinical00_SAS.zip
+#AllClinical01_SAS.zip
+#AllClinical02_SAS.zip
+#AllClinical03_SAS.zip
+#AllClinical04_SAS.zip
+#AllClinical05_SAS.zip
+#AllClinical06_SAS.zip
+#AllClinical07_SAS.zip
+#AllClinical08_SAS.zip
+#AllClinical09_SAS.zip
 
 Enrollees_SAS.zip
 Outcomes99_SAS.zip

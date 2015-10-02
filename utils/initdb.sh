@@ -10,7 +10,7 @@
 # USAGE: initdb.sh
 #
 
-DBNAME="oai3";
+DBNAME="oai2";
 DATADIR="/tmp/"
 
 if [ "$1" == "-d" ]; then
@@ -22,7 +22,8 @@ if [ "$1" == "-d" ]; then
 fi
 
 # Create database
-psql -c 'DROP DATABASE IF EXISTS '$DBNAME';CREATE DATABASE '$DBNAME';'
+psql -c 'DROP DATABASE IF EXISTS '$DBNAME';'
+psql -c 'CREATE DATABASE '$DBNAME';'
 
 # Create SQL table schema and data
 python dbimport/metadata.py > $DATADIR/oai-data.sql -i ../data/VG_Variable_tables.bz2
