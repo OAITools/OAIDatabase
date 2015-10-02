@@ -1,5 +1,6 @@
 import psycopg2
 import numpy as np
+from sklearn.preprocessing import OneHotEncoder
 
 DBNAME = "oai2"
 
@@ -89,48 +90,78 @@ class FeatureBuilder(object):
         self.row_names = map(str,results)
         
     
-    def get_feature(self,table,var_id):
+    def get_feature(self,table,var_id,force_continuous=False):
         
         # get variable type (nominal or continuous)
-        query = "SELECT var_id,type,labeln FROM vardefs WHERE var_id in (%s);"
+        query = "SELECT var_id,type,labeln,labelset FROM vardefs WHERE var_id in (%s);"
         query = query % ",".join(map(lambda x:"'%s'" % x,[var_id]))
         self.cur.execute(query)
         results = self.cur.fetchall()
+        print results
         assert len(results) > 0  
-       
-        _,var_type,label_n = results[0]
+
+        # query data
+        _,var_type,label_n,labelset = results[0]
+        vars = ["id",'vid'] + [var_id]
+        query = "SELECT %s FROM jointsx ORDER BY id,vid;" % ",".join(vars)
+        self.cur.execute(query)  
+        results = self.cur.fetchall()
+        
+        subjects = {}
+        for row in results:
+            sid,row = row[0],row[1:]
+            subjects[sid] = subjects.get(sid,[]) + [row]
         
         # create continuous variable tensor
-        if var_type == 'continuous':
+        X = []
+        if var_type == 'continuous' or force_continuous:
             
-            vars = ["id",'vid'] + [var_id]
-            query = "SELECT %s FROM jointsx ORDER BY id,vid;" % ",".join(vars)
-            self.cur.execute(query)  
-            results = self.cur.fetchall()
-            
-            subjects = {}
-            for row in results:
-                id,row = row[0],row[1:]
-                subjects[id] = subjects.get(id,[]) + [row]
-            
-            X =[]
-            for id in subjects:
+            for sid in subjects:
                 m = np.empty((10,1),dtype=np.float64)
                 m.fill(np.nan)
             
-                for row in subjects[id]:
+                for row in subjects[sid]:
                     vid,tmp = row[0],row[1:]
                     m[vid] = tmp
             
                 X += [m]
             
-            return np.array(X)
+            X = np.array(X)
                 
         # nomimal
         else:
-            pass
-        
-        
+            # category variable domain
+            domain = [int(x) for x in labelset.split("|") if x!= "none"]
+            null_id = max(domain) + 1
+            enc = OneHotEncoder(n_values=null_id+1)
+            
+            for sid in subjects:
+                m = np.empty((10,1),dtype=np.int8)
+                # fill out empty matrix with the default label for None
+                m.fill(null_id)
+                
+                for row in subjects[sid]:
+                    vid,tmp = row[0],row[1:]
+                    # replace None with null_id value
+                    tmp = [null_id if x==None else int(x) for x in tmp]
+                    m[vid] = tmp
+            
+                X += [m]
+            
+            X = np.array(X)
+         
+            Xt = []
+            for j in range(0,X.shape[1]):
+                x = X[...,j,...]
+                x = enc.fit_transform(x).toarray()
+                Xt += [x]
+                print "*",x.shape
+            
+            X = np.array(Xt)
+            
+           
+        print X.shape
+        return X
         
     
     
