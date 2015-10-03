@@ -107,6 +107,9 @@ def main(args):
     print("Downloading datasets...")
     for filename in datasets:
         outfile = "%s%s" % (args.outputdir, filename)
+        if os.path.exists(outfile):
+            sys.stdout.write(" (skipping) %s...\n" % filename)
+            continue
         url = "%s%s" % (FILE_URL, filename)
         sys.stdout.write(" (+) %s..." % filename)
         browser.retrieve(url,outfile)

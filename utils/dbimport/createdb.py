@@ -217,6 +217,9 @@ primary_key_defs["kXR_QJSW_Rel_Duryea"] = []
 primary_key_defs["kXR_SQ_BU"] = []
 primary_key_defs["kXR_SQ_Rel_BU"] = []
 
+#primary_key_defs["kMRI_FNIH_SQ_MOAKS_BICL"] = []
+
+
 
 def main(args):
     

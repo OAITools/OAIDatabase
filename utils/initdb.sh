@@ -26,7 +26,7 @@ psql -c 'DROP DATABASE IF EXISTS '$DBNAME';'
 psql -c 'CREATE DATABASE '$DBNAME';'
 
 # Create SQL table schema and data
-python dbimport/metadata.py > $DATADIR/oai-data.sql -i ../data/VG_Variable_tables.bz2
+python dbimport/metadata.py -i ../data/VG_Variable_tables.bz2 > $DATADIR/oai-data.sql 
 python dbimport/createdb.py -i $DATADIR/OAI/ >> $DATADIR/oai-data.sql
 
 # Load table schema and data

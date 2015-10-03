@@ -5,14 +5,14 @@
 # -----------------------------
 # FNIH Data Sets
 # -----------------------------
-Clinical_FNIH_SAS.zip
-kMRI_FNIH_QCart_Chondrometrics_SAS.zip
-kMRI_FNIH_Boneshape_iMorphics_SAS.zip
-kMRI_FNIH_SBP_Qmetrics_SAS.zip
-kMRI_FNIH_SQ_MOAKS_BICL_SAS.zip
-kMRI_FNIH_QCart_Biomediq_SAS.zip
-kXR_FNIH_BTI_Duke_SAS.zip
-Biospec_FNIH_LabCorp_SAS.zip
+#Clinical_FNIH_SAS.zip
+#kMRI_FNIH_QCart_Chondrometrics_SAS.zip
+#kMRI_FNIH_Boneshape_iMorphics_SAS.zip
+#kMRI_FNIH_SBP_Qmetrics_SAS.zip
+#kMRI_FNIH_SQ_MOAKS_BICL_SAS.zip
+#kMRI_FNIH_QCart_Biomediq_SAS.zip
+#kXR_FNIH_BTI_Duke_SAS.zip
+#Biospec_FNIH_LabCorp_SAS.zip
 
 # -----------------------------
 # Clinical Data Sets
