@@ -1,5 +1,5 @@
-# OAI-tools
-Tools for use with Osteoarthritis Initiative (OAI) data
+# SQL Database 
+These tools compile all the Osteoarthritis Initiative (OAI) data into a single SQL database
 
 Database Instantiation:
 
